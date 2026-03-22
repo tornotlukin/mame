@@ -21,6 +21,8 @@
 #include "win/pointswininfo.h"
 #include "win/uimetrics.h"
 
+#include "debugremote_tcp.h"
+
 // emu
 #include "config.h"
 #include "debugger.h"
@@ -118,6 +120,9 @@ private:
 	bool m_save_windows;
 	bool m_group_windows;
 	bool m_group_windows_setting;
+
+	// Embedded TCP server for remote LLM control
+	remote_tcp_server m_tcp_server;
 };
 
 
@@ -127,12 +132,18 @@ int debugger_windows::init(osd_interface &osd, osd_options const &options)
 	if (!m_osd)
 		return -1;
 
+	// Configure TCP server for remote LLM access
+	m_tcp_server.configure(options.debugger_port());
+
 	return 0;
 }
 
 
 void debugger_windows::exit()
 {
+	// Stop TCP server
+	m_tcp_server.stop();
+
 	// loop over windows and free them
 	while (!m_window_list.empty())
 		m_window_list.front()->destroy();
@@ -179,6 +190,10 @@ void debugger_windows::wait_for_debugger(device_t &device, bool firststop)
 		}
 	}
 
+	// Start TCP server on first stop (after windows exist)
+	if (!m_tcp_server.is_active())
+		m_tcp_server.start(machine());
+
 	// update the views in the console to reflect the current CPU
 	if (m_main_console)
 		m_main_console->set_cpu(device);
@@ -201,29 +216,43 @@ void debugger_windows::wait_for_debugger(device_t &device, bool firststop)
 	m_waiting_for_debugger = true;
 	show_all();
 
+	// notify TCP server of stop
+	m_tcp_server.notify_stop(device);
+
 	// run input polling to ensure that our status is in sync
 	downcast<windows_osd_interface&>(machine().osd()).poll_input_modules(false);
 
-	// get and process messages
+	// process Win32 messages AND TCP commands together
+	// Use PeekMessage (non-blocking) so we can also poll TCP
 	MSG message;
-	GetMessage(&message, nullptr, 0, 0);
-
-	switch (message.message)
+	if (PeekMessage(&message, nullptr, 0, 0, PM_REMOVE))
 	{
-	// check for F10 -- we need to capture that ourselves
-	case WM_SYSKEYDOWN:
-	case WM_SYSKEYUP:
-		if (message.wParam == VK_F4 && message.message == WM_SYSKEYDOWN)
-			SendMessage(GetAncestor(GetFocus(), GA_ROOT), WM_CLOSE, 0, 0);
-		if (message.wParam == VK_F10)
-			SendMessage(GetAncestor(GetFocus(), GA_ROOT), (message.message == WM_SYSKEYDOWN) ? WM_KEYDOWN : WM_KEYUP, message.wParam, message.lParam);
-		break;
+		switch (message.message)
+		{
+		// check for F10 -- we need to capture that ourselves
+		case WM_SYSKEYDOWN:
+		case WM_SYSKEYUP:
+			if (message.wParam == VK_F4 && message.message == WM_SYSKEYDOWN)
+				SendMessage(GetAncestor(GetFocus(), GA_ROOT), WM_CLOSE, 0, 0);
+			if (message.wParam == VK_F10)
+				SendMessage(GetAncestor(GetFocus(), GA_ROOT), (message.message == WM_SYSKEYDOWN) ? WM_KEYDOWN : WM_KEYUP, message.wParam, message.lParam);
+			break;
 
-	// process everything else
-	default:
-		winwindow_dispatch_message(*m_machine, message);
-		break;
+		// process everything else
+		default:
+			winwindow_dispatch_message(*m_machine, message);
+			break;
+		}
 	}
+	else
+	{
+		// No Win32 messages — poll TCP and sleep briefly to avoid 100% CPU
+		m_tcp_server.poll();
+		osd_sleep(osd_ticks_per_second() / 1000);
+	}
+
+	// Also poll TCP even when we got a Win32 message (handle both)
+	m_tcp_server.poll();
 
 	// mark the debugger as active
 	m_waiting_for_debugger = false;
@@ -232,6 +261,9 @@ void debugger_windows::wait_for_debugger(device_t &device, bool firststop)
 
 void debugger_windows::debugger_update()
 {
+	// poll TCP for remote commands while running
+	m_tcp_server.poll();
+
 	// if we're running live, do some checks
 	if (!winwindow_has_focus() && m_machine && !m_machine->debugger().cpu().is_stopped() && (m_machine->phase() == machine_phase::RUNNING))
 	{

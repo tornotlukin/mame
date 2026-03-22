@@ -39,7 +39,8 @@ def get_client() -> MameClient:
         host = os.environ.get("MAME_DEBUG_HOST", "localhost")
         port = int(os.environ.get("MAME_DEBUG_PORT", "12345"))
         _client = MameClient(host, port)
-        _client.connect()
+    # Ensure connected (auto-reconnects if connection was lost)
+    _client._ensure_connected()
     return _client
 
 

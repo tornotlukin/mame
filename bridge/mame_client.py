@@ -22,6 +22,8 @@ class MameClient:
         self._lock = threading.Lock()
 
     def connect(self):
+        self.close()
+        self.buffer = ""
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.settimeout(10.0)
         self.sock.connect((self.host, self.port))
@@ -34,16 +36,40 @@ class MameClient:
 
     def close(self):
         if self.sock:
-            self.sock.close()
+            try:
+                self.sock.close()
+            except Exception:
+                pass
             self.sock = None
+
+    def _ensure_connected(self):
+        """Reconnect if the connection was lost."""
+        if self.sock is None:
+            self.connect()
+            return
+        # Test if socket is still alive
+        try:
+            self.sock.getpeername()
+        except Exception:
+            self.connect()
 
     def send(self, request: dict) -> dict:
         with self._lock:
+            self._ensure_connected()
             self.request_id += 1
             request["id"] = self.request_id
             line = json.dumps(request) + "\n"
-            self.sock.sendall(line.encode("utf-8"))
-            return self._read_response()
+            try:
+                self.sock.sendall(line.encode("utf-8"))
+                return self._read_response()
+            except (ConnectionError, OSError):
+                # Reconnect and retry once
+                self.connect()
+                self.request_id += 1
+                request["id"] = self.request_id
+                line = json.dumps(request) + "\n"
+                self.sock.sendall(line.encode("utf-8"))
+                return self._read_response()
 
     def _read_response(self, timeout=10.0) -> dict:
         old_timeout = self.sock.gettimeout()
