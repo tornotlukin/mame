@@ -12,27 +12,23 @@
 #include "emu.h"
 #include "debug_module.h"
 
+#include "debug/debugbuf.h"
 #include "debug/debugcon.h"
 #include "debug/debugcpu.h"
-#include "debug/debugvw.h"
-#include "debug/dvdisasm.h"
-#include "debug/dvmemory.h"
-#include "debug/dvstate.h"
 #include "debug/points.h"
 #include "debug/textbuf.h"
 #include "debugger.h"
+#include "distate.h"
 
 #include "modules/lib/osdobj_common.h"
 #include "modules/osdmodule.h"
 
 #include "fileio.h"
 
+#include <cinttypes>
 #include <cstring>
-#include <map>
-#include <sstream>
 #include <string>
 #include <string_view>
-#include <vector>
 
 
 namespace osd {
@@ -193,6 +189,7 @@ public:
 		m_address_space(nullptr),
 		m_debugger_cpu(nullptr),
 		m_debugger_console(nullptr),
+		m_debugger_host("localhost"),
 		m_debugger_port(12345),
 		m_socket(OPEN_FLAG_WRITE | OPEN_FLAG_CREATE),
 		m_initialized(false),
@@ -228,6 +225,10 @@ private:
 	void handle_evaluate(const std::string &json, int64_t id);
 	void handle_get_state(const std::string &json, int64_t id);
 	void handle_get_breakpoints(const std::string &json, int64_t id);
+	void handle_break(const std::string &json, int64_t id);
+
+	// Get the address space for the visible CPU, resolving space name
+	address_space &get_space_for_request(const std::string &json);
 
 	// Response helpers
 	void send_result(int64_t id, const std::string &output);
@@ -245,6 +246,7 @@ private:
 	address_space *m_address_space;
 	debugger_cpu *m_debugger_cpu;
 	debugger_console *m_debugger_console;
+	std::string m_debugger_host;
 	int m_debugger_port;
 	emu_file m_socket;
 	bool m_initialized;
@@ -265,6 +267,9 @@ private:
 //-------------------------------------------------------------------------
 int debug_remote::init(osd_interface &osd, const osd_options &options)
 {
+	m_debugger_host = options.debugger_host();
+	if (m_debugger_host.empty())
+		m_debugger_host = "localhost";
 	m_debugger_port = options.debugger_port();
 	if (m_debugger_port == 0)
 		m_debugger_port = 12345;
@@ -396,11 +401,11 @@ void debug_remote::wait_for_debugger(device_t &device, bool firststop)
 		m_debugger_console = &m_machine->debugger().console();
 
 		// Open TCP socket
-		std::string socket_name = string_format("socket.localhost:%d", m_debugger_port);
+		std::string socket_name = string_format("socket.%s:%d", m_debugger_host, m_debugger_port);
 		std::error_condition const filerr = m_socket.open(socket_name);
 		if (filerr)
-			fatalerror("remote debugger: failed to start listening on port %d\n", m_debugger_port);
-		osd_printf_info("remote debugger: listening on localhost:%d\n", m_debugger_port);
+			fatalerror("remote debugger: failed to start listening on %s:%d\n", m_debugger_host, m_debugger_port);
+		osd_printf_info("remote debugger: listening on %s:%d\n", m_debugger_host, m_debugger_port);
 
 		// Send welcome event
 		send_event("connected", string_format("%s,%s",
@@ -434,7 +439,7 @@ void debug_remote::wait_for_debugger(device_t &device, bool firststop)
 		{
 			send_event("stopped", string_format("%s,%s",
 				json_kv("reason", m_stopped_reason),
-				json_kv_hex("pc", m_maincpu->state_int(STATE_GENPC))));
+				json_kv_hex("pc", m_state->state_int(STATE_GENPC))));
 		}
 		m_send_stop_event = false;
 	}
@@ -501,6 +506,8 @@ void debug_remote::handle_request(const std::string &json)
 		handle_get_state(json, id);
 	else if (type == "get_breakpoints")
 		handle_get_breakpoints(json, id);
+	else if (type == "break")
+		handle_break(json, id);
 	else
 		send_error(id, string_format("unknown type: %s", type));
 }
@@ -525,20 +532,7 @@ void debug_remote::handle_command(const std::string &json, int64_t id)
 
 	if (result.error_class() != CMDERR::NONE)
 	{
-		// Map error to a message
-		std::string errmsg;
-		switch (result.error_class())
-		{
-		case CMDERR::UNKNOWN_COMMAND:    errmsg = "unknown command"; break;
-		case CMDERR::AMBIGUOUS_COMMAND:  errmsg = "ambiguous command"; break;
-		case CMDERR::UNBALANCED_PARENS: errmsg = "unbalanced parentheses"; break;
-		case CMDERR::UNBALANCED_QUOTES: errmsg = "unbalanced quotes"; break;
-		case CMDERR::NOT_ENOUGH_PARAMS: errmsg = "not enough parameters"; break;
-		case CMDERR::TOO_MANY_PARAMS:   errmsg = "too many parameters"; break;
-		case CMDERR::EXPRESSION_ERROR:  errmsg = "expression error"; break;
-		default:                         errmsg = "command error"; break;
-		}
-		send_error(id, errmsg);
+		send_error(id, debugger_console::cmderr_to_string(result));
 		return;
 	}
 
@@ -548,7 +542,32 @@ void debug_remote::handle_command(const std::string &json, int64_t id)
 }
 
 //-------------------------------------------------------------------------
-// Read memory from address space
+// Resolve the address space for a request, defaulting to program space of visible CPU
+address_space &debug_remote::get_space_for_request(const std::string &json)
+{
+	// Use visible CPU's memory interface
+	device_t *visiblecpu = m_debugger_console->get_visible_cpu();
+	device_memory_interface *memintf = nullptr;
+	if (visiblecpu)
+		visiblecpu->interface(memintf);
+	if (!memintf)
+		memintf = m_memory;
+
+	std::string space_name;
+	if (json_get_string(json, "space", space_name))
+	{
+		if (space_name == "data" && memintf->has_space(AS_DATA))
+			return memintf->space(AS_DATA);
+		else if (space_name == "io" && memintf->has_space(AS_IO))
+			return memintf->space(AS_IO);
+		else if (space_name == "opcodes" && memintf->has_space(AS_OPCODES))
+			return memintf->space(AS_OPCODES);
+	}
+	return memintf->space(AS_PROGRAM);
+}
+
+//-------------------------------------------------------------------------
+// Read memory from address space (with side effects suppressed)
 void debug_remote::handle_read_memory(const std::string &json, int64_t id)
 {
 	int64_t addr = 0, len = 1;
@@ -561,28 +580,20 @@ void debug_remote::handle_read_memory(const std::string &json, int64_t id)
 	if (len < 1) len = 1;
 	if (len > 65536) len = 65536;
 
+	address_space &space = get_space_for_request(json);
+
+	// Suppress side effects during debugger memory reads
+	auto se = m_machine->disable_side_effects();
+
 	// Read memory bytes
 	std::string hexdata;
 	hexdata.reserve(len * 2);
 	std::string ascii;
 	ascii.reserve(len);
 
-	address_space *space = m_address_space;
-
-	// Check if a different space was requested
-	std::string space_name;
-	if (json_get_string(json, "space", space_name))
-	{
-		if (space_name == "data" && m_memory->has_space(AS_DATA))
-			space = &m_memory->space(AS_DATA);
-		else if (space_name == "io" && m_memory->has_space(AS_IO))
-			space = &m_memory->space(AS_IO);
-		// default to program space
-	}
-
 	for (int64_t i = 0; i < len; i++)
 	{
-		uint8_t byte = space->read_byte(addr + i);
+		uint8_t byte = space.read_byte(addr + i);
 		char hex[3];
 		snprintf(hex, sizeof(hex), "%02x", byte);
 		hexdata += hex;
@@ -599,7 +610,7 @@ void debug_remote::handle_read_memory(const std::string &json, int64_t id)
 }
 
 //-------------------------------------------------------------------------
-// Write memory to address space
+// Write memory to address space (side effects enabled — writes should take effect)
 void debug_remote::handle_write_memory(const std::string &json, int64_t id)
 {
 	int64_t addr = 0;
@@ -616,15 +627,7 @@ void debug_remote::handle_write_memory(const std::string &json, int64_t id)
 		return;
 	}
 
-	address_space *space = m_address_space;
-	std::string space_name;
-	if (json_get_string(json, "space", space_name))
-	{
-		if (space_name == "data" && m_memory->has_space(AS_DATA))
-			space = &m_memory->space(AS_DATA);
-		else if (space_name == "io" && m_memory->has_space(AS_IO))
-			space = &m_memory->space(AS_IO);
-	}
+	address_space &space = get_space_for_request(json);
 
 	// Parse hex string and write bytes
 	int bytes_written = 0;
@@ -632,7 +635,7 @@ void debug_remote::handle_write_memory(const std::string &json, int64_t id)
 	{
 		char hex[3] = { data[i], data[i + 1], 0 };
 		uint8_t byte = (uint8_t)strtoul(hex, nullptr, 16);
-		space->write_byte(addr + bytes_written, byte);
+		space.write_byte(addr + bytes_written, byte);
 		bytes_written++;
 	}
 
@@ -640,35 +643,47 @@ void debug_remote::handle_write_memory(const std::string &json, int64_t id)
 }
 
 //-------------------------------------------------------------------------
-// Get all CPU registers
+// Get all CPU registers for the visible CPU
 void debug_remote::handle_get_registers(const std::string &json, int64_t id)
 {
-	if (!m_state)
+	// Use the visible CPU, not necessarily maincpu
+	device_t *visiblecpu = m_debugger_console->get_visible_cpu();
+	device_state_interface *state = nullptr;
+	if (visiblecpu)
+		visiblecpu->interface(state);
+	if (!state)
+		state = m_state;
+	if (!state)
 	{
 		send_error(id, "no CPU state available");
 		return;
 	}
 
 	std::string regs;
-	for (const auto &entry : m_state->state_entries())
+	for (const auto &entry : state->state_entries())
 	{
+		// Skip dividers and non-visible entries
+		if (entry->divider() || !entry->visible())
+			continue;
+
 		if (!regs.empty())
 			regs += ",";
+		// to_string() returns the formatted current value
 		regs += string_format("\"%s\":\"%s\"",
 			json_escape(entry->symbol()),
-			json_escape(entry->format_string()));
+			json_escape(entry->to_string()));
 	}
 
 	std::string response = string_format("{%s,%s,%s,\"regs\":{%s}}",
 		json_kv_int("id", id),
 		json_kv("type", "registers"),
-		json_kv("cpu", m_maincpu->shortname()),
+		json_kv("cpu", visiblecpu ? visiblecpu->shortname() : m_maincpu->shortname()),
 		regs);
 	send_line(response);
 }
 
 //-------------------------------------------------------------------------
-// Disassemble instructions at address
+// Disassemble instructions at address using debug_disasm_buffer
 void debug_remote::handle_disassemble(const std::string &json, int64_t id)
 {
 	int64_t addr = 0, count = 10;
@@ -677,38 +692,31 @@ void debug_remote::handle_disassemble(const std::string &json, int64_t id)
 	if (count < 1) count = 1;
 	if (count > 200) count = 200;
 
-	// Use the console dasm command and capture output
-	text_buffer &textbuf = m_debugger_console->get_console_textbuf();
-	text_buffer_clear(textbuf);
+	// Use the visible CPU for disassembly
+	device_t *cpu = m_debugger_console->get_visible_cpu();
+	if (!cpu)
+		cpu = m_maincpu;
 
-	std::string cmd = string_format("dasm %%stdout,0x%" PRIx64 ",%" PRId64, (uint64_t)addr, count);
-	m_debugger_console->execute_command(cmd, false);
+	debug_disasm_buffer disasm(*cpu);
 
-	std::string output = capture_console_output();
-
-	// If dasm to stdout didn't work, fall back to a simpler approach
-	if (output.empty())
+	std::string output;
+	offs_t pc = (offs_t)addr;
+	for (int64_t i = 0; i < count; i++)
 	{
-		// Manual disassembly using the CPU disassembler
-		std::string lines;
-		offs_t pc = (offs_t)addr;
-		for (int64_t i = 0; i < count; i++)
-		{
-			std::string dasm_result;
-			offs_t next_pc = pc;
+		std::string instruction;
+		offs_t next_pc;
+		offs_t size;
+		u32 info;
+		disasm.disassemble(pc, instruction, next_pc, size, info);
 
-			// Use debugger_cpu to get disassembly
-			debug_disasm_buffer disasm(*m_maincpu);
-			std::string adr, dasm, data;
-			offs_t actual_pc = pc;
-			disasm.disassemble(actual_pc, dasm, adr, data);
+		std::string pc_str = disasm.pc_to_string(pc);
+		std::string data_str = disasm.data_to_string(pc, size, true);
 
-			if (!lines.empty())
-				lines += "\n";
-			lines += string_format("%s: %s  %s", adr, data, dasm);
-			pc = actual_pc;
-		}
-		output = lines;
+		if (!output.empty())
+			output += "\n";
+		output += string_format("%s: %-12s %s", pc_str, data_str, instruction);
+
+		pc = next_pc;
 	}
 
 	send_result(id, output);
@@ -753,14 +761,24 @@ void debug_remote::handle_evaluate(const std::string &json, int64_t id)
 void debug_remote::handle_get_state(const std::string &json, int64_t id)
 {
 	bool stopped = m_debugger_cpu->is_stopped();
-	uint64_t pc = m_maincpu->state_int(STATE_GENPC);
+
+	// Use visible CPU for state reporting
+	device_t *visiblecpu = m_debugger_console->get_visible_cpu();
+	device_state_interface *state = nullptr;
+	if (visiblecpu)
+		visiblecpu->interface(state);
+	if (!state)
+		state = m_state;
+
+	uint64_t pc = state ? state->state_int(STATE_GENPC) : 0;
+	const char *cpuname = visiblecpu ? visiblecpu->shortname() : m_maincpu->shortname();
 
 	std::string response = string_format("{%s,%s,%s,%s,%s,%s}",
 		json_kv_int("id", id),
 		json_kv("type", "state"),
 		json_kv_bool("stopped", stopped),
 		json_kv_hex("pc", pc),
-		json_kv("cpu", m_maincpu->shortname()),
+		json_kv("cpu", cpuname),
 		json_kv("machine", m_machine->system().name));
 	send_line(response);
 }
@@ -778,6 +796,16 @@ void debug_remote::handle_get_breakpoints(const std::string &json, int64_t id)
 	std::string output = capture_console_output();
 
 	send_result(id, output);
+}
+
+
+//-------------------------------------------------------------------------
+// Break into debugger (halt execution) — can be sent while running
+void debug_remote::handle_break(const std::string &json, int64_t id)
+{
+	m_machine->debugger().debug_break();
+	m_stopped_reason = "break";
+	send_result(id, "execution halted");
 }
 
 
