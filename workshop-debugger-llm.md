@@ -400,6 +400,10 @@ The UI improvements ride alongside the LLM integration — same drop-in replacem
 
 > **Claude:** Created `docs/llm-debugger-reference.md` — a comprehensive syntax reference built specifically for LLM consumption. Covers every command with exact syntax, correct/wrong examples, a "things that don't exist" table to prevent GDB/LLDB hallucinations, common patterns, expression syntax, memory access operators, cheat search workflow, and critical rules (hex-by-default, comma separators, brace-wrapped actions).
 
+> **User:** We need a skill for the LLM to know the command-line syntax to launch MAME into the remote debugger. Add it to the workshop.
+
+> **Claude:** Added "Needed: MAME Launch Skill" section covering: MAME CLI syntax, single-dash options, `-debug -debugger remote -debugger_port`, ROM paths, common mistakes LLMs make (double-dash, wrong flag names, missing `-debugger remote`). Skill will live as a Claude Code skill for the worker LLM.
+
 ---
 
 ## Key Insights
@@ -413,11 +417,41 @@ The UI improvements ride alongside the LLM integration — same drop-in replacem
 
 ---
 
+## Needed: MAME Launch Skill
+
+The worker LLM (Haiku) needs a skill that tells it how to launch MAME with the remote debugger. Without this, the LLM will guess at command-line syntax and get it wrong.
+
+**Skill name:** `mame-debug-launch` (or similar)
+
+**What it needs to cover:**
+- MAME command-line syntax: `mame <driver> [options]`
+- How to enable debug mode: `-debug`
+- How to select the remote debugger: `-debugger remote`
+- How to set the port: `-debugger_port <port>` (default: 12345)
+- How to set the host: `-debugger_host <addr>` (default: localhost)
+- ROM paths and how MAME finds ROMs: `-rompath <path>`
+- Common drivers/games for testing
+- Full example: `mame pacman -debug -debugger remote -debugger_port 12345`
+- How to load with a debug script: `-debugscript <file>`
+- How to verify MAME is listening (the console will print "remote debugger: listening on...")
+- Error scenarios: ROM not found, missing CHDs, debugger module not built
+
+**Where it lives:** As a Claude Code skill in the project or user skills directory, so the worker LLM can invoke it.
+
+**Key syntax the LLM gets wrong without this:**
+- Using `--debug` instead of `-debug` (MAME uses single-dash for long options)
+- Using `--port` instead of `-debugger_port`
+- Forgetting that `-debugger remote` is required (defaults to platform-native debugger otherwise)
+- Not knowing that the game/driver name comes right after `mame` with no flag
+
+---
+
 ## Next Steps
 
 - [ ] Decide on remaining open questions (message format, async events, threading)
-- [ ] Study `debuggdbstub.cpp` in detail as implementation reference
-- [ ] Prototype the MAME TCP server module
+- [x] Study `debuggdbstub.cpp` in detail as implementation reference
+- [x] Prototype the MAME TCP server module
+- [ ] Create `mame-debug-launch` skill for the worker LLM
 - [ ] Build minimal Python bridge with one or two tools
 - [ ] Test with a simple scenario (e.g., "find where lives are stored")
 
