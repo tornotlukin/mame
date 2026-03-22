@@ -54,7 +54,11 @@ debugview_info::debugview_info(debugger_windows_interface &debugger, debugwin_in
 	m_wnd(nullptr),
 	m_hscroll(nullptr),
 	m_vscroll(nullptr),
-	m_contextmenu(nullptr)
+	m_contextmenu(nullptr),
+	m_selecting(false),
+	m_has_selection(false),
+	m_sel_start{ 0, 0 },
+	m_sel_end{ 0, 0 }
 {
 	register_window_class();
 
@@ -353,14 +357,20 @@ void debugview_info::save_configuration_to_node(util::xml::data_node &node)
 
 void debugview_info::add_items_to_context_menu(HMENU menu)
 {
+	AppendMenu(menu, MF_ENABLED, ID_CONTEXT_COPY_SELECTION, TEXT("Copy Selection\tCtrl+C"));
 	AppendMenu(menu, MF_ENABLED, ID_CONTEXT_COPY_VISIBLE, TEXT("Copy Visible"));
-	AppendMenu(menu, MF_ENABLED, ID_CONTEXT_PASTE, TEXT("Paste"));
+	AppendMenu(menu, MF_ENABLED, ID_CONTEXT_COPY_ALL, TEXT("Copy All"));
+	AppendMenu(menu, MF_SEPARATOR, 0, nullptr);
+	AppendMenu(menu, MF_ENABLED, ID_CONTEXT_SELECT_ALL, TEXT("Select All\tCtrl+A"));
+	AppendMenu(menu, MF_SEPARATOR, 0, nullptr);
+	AppendMenu(menu, MF_ENABLED, ID_CONTEXT_PASTE, TEXT("Paste\tCtrl+V"));
 }
 
 
 void debugview_info::update_context_menu(HMENU menu)
 {
 	EnableMenuItem(menu, ID_CONTEXT_PASTE, MF_BYCOMMAND | (IsClipboardFormatAvailable(CF_UNICODETEXT) ? MF_ENABLED : MF_GRAYED));
+	EnableMenuItem(menu, ID_CONTEXT_COPY_SELECTION, MF_BYCOMMAND | (has_selection() ? MF_ENABLED : MF_GRAYED));
 }
 
 
@@ -418,6 +428,38 @@ void debugview_info::handle_context_menu(unsigned command)
 			break;
 		}
 
+	case ID_CONTEXT_COPY_SELECTION:
+		{
+			std::wstring text = get_selected_text();
+			if (!text.empty())
+				copy_to_clipboard(text);
+			else
+				PlaySound(TEXT("SystemAsterisk"), nullptr, SND_SYNC);
+			break;
+		}
+
+	case ID_CONTEXT_COPY_ALL:
+		{
+			std::wstring text = get_all_text();
+			if (!text.empty())
+				copy_to_clipboard(text);
+			else
+				PlaySound(TEXT("SystemAsterisk"), nullptr, SND_SYNC);
+			break;
+		}
+
+	case ID_CONTEXT_SELECT_ALL:
+		{
+			debug_view_xy const total = m_view->total_size();
+			m_sel_start.x = 0;
+			m_sel_start.y = 0;
+			m_sel_end.x = total.x - 1;
+			m_sel_end.y = total.y - 1;
+			m_has_selection = true;
+			InvalidateRect(m_wnd, nullptr, FALSE);
+			break;
+		}
+
 	case ID_CONTEXT_PASTE:
 		if (!IsClipboardFormatAvailable(CF_UNICODETEXT) || !OpenClipboard(m_wnd))
 		{
@@ -460,6 +502,203 @@ void debugview_info::handle_context_menu(unsigned command)
 }
 
 
+//-------------------------------------------------------------------------
+// Selection and clipboard helpers
+//-------------------------------------------------------------------------
+
+void debugview_info::copy_to_clipboard(std::wstring const &text)
+{
+	HGLOBAL const clip = GlobalAlloc(GMEM_MOVEABLE, (text.length() + 1) * sizeof(wchar_t));
+	if (!clip)
+	{
+		PlaySound(TEXT("SystemAsterisk"), nullptr, SND_SYNC);
+		return;
+	}
+	if (!OpenClipboard(m_wnd))
+	{
+		GlobalFree(clip);
+		PlaySound(TEXT("SystemAsterisk"), nullptr, SND_SYNC);
+		return;
+	}
+	EmptyClipboard();
+	LPWSTR const lock = reinterpret_cast<LPWSTR>(GlobalLock(clip));
+	std::copy_n(text.c_str(), text.length() + 1, lock);
+	GlobalUnlock(clip);
+	if (!SetClipboardData(CF_UNICODETEXT, clip))
+	{
+		GlobalFree(clip);
+		PlaySound(TEXT("SystemAsterisk"), nullptr, SND_SYNC);
+	}
+	CloseClipboard();
+}
+
+
+std::wstring debugview_info::get_visible_text()
+{
+	debug_view_xy const visarea = m_view->visible_size();
+	debug_view_char const *viewdata = m_view->viewdata();
+	if (!viewdata)
+		return std::wstring();
+
+	std::wstring text;
+	for (uint32_t row = 0; row < visarea.y; row++, viewdata += visarea.x)
+	{
+		std::wstring::size_type const start = text.length();
+		for (uint32_t col = 0; col < visarea.x; ++col)
+			text += wchar_t(viewdata[col].byte);
+		std::wstring::size_type const nonblank = text.find_last_not_of(L"\t\n\v\r ");
+		if (nonblank != std::wstring::npos)
+			text.resize((std::max)(start, nonblank + 1));
+		text += L"\r\n";
+	}
+	return text;
+}
+
+
+std::wstring debugview_info::get_all_text()
+{
+	// Save current view state
+	debug_view_xy const old_visible = m_view->visible_size();
+	debug_view_xy const old_pos = m_view->visible_position();
+	debug_view_xy const total = m_view->total_size();
+
+	// Temporarily resize view to show everything
+	m_view->set_visible_size(total);
+	debug_view_xy origin = { 0, 0 };
+	m_view->set_visible_position(origin);
+
+	// Get all text
+	debug_view_char const *viewdata = m_view->viewdata();
+	if (!viewdata)
+	{
+		m_view->set_visible_size(old_visible);
+		m_view->set_visible_position(old_pos);
+		return std::wstring();
+	}
+
+	std::wstring text;
+	for (int32_t row = 0; row < total.y; row++, viewdata += total.x)
+	{
+		std::wstring::size_type const start = text.length();
+		for (int32_t col = 0; col < total.x; ++col)
+			text += wchar_t(viewdata[col].byte);
+		std::wstring::size_type const nonblank = text.find_last_not_of(L"\t\n\v\r ");
+		if (nonblank != std::wstring::npos)
+			text.resize((std::max)(start, nonblank + 1));
+		text += L"\r\n";
+	}
+
+	// Restore view state
+	m_view->set_visible_size(old_visible);
+	m_view->set_visible_position(old_pos);
+	return text;
+}
+
+
+std::wstring debugview_info::get_selected_text()
+{
+	if (!m_has_selection)
+		return std::wstring();
+
+	// Normalize selection range (start may be after end if user dragged upward)
+	int32_t start_y = (std::min)(m_sel_start.y, m_sel_end.y);
+	int32_t end_y = (std::max)(m_sel_start.y, m_sel_end.y);
+	int32_t start_x = (m_sel_start.y <= m_sel_end.y) ? m_sel_start.x : m_sel_end.x;
+	int32_t end_x = (m_sel_start.y <= m_sel_end.y) ? m_sel_end.x : m_sel_start.x;
+	if (m_sel_start.y == m_sel_end.y)
+	{
+		start_x = (std::min)(m_sel_start.x, m_sel_end.x);
+		end_x = (std::max)(m_sel_start.x, m_sel_end.x);
+	}
+
+	// Save and resize to get all data
+	debug_view_xy const old_visible = m_view->visible_size();
+	debug_view_xy const old_pos = m_view->visible_position();
+	debug_view_xy const total = m_view->total_size();
+
+	m_view->set_visible_size(total);
+	debug_view_xy origin = { 0, 0 };
+	m_view->set_visible_position(origin);
+
+	debug_view_char const *viewdata = m_view->viewdata();
+	if (!viewdata)
+	{
+		m_view->set_visible_size(old_visible);
+		m_view->set_visible_position(old_pos);
+		return std::wstring();
+	}
+
+	std::wstring text;
+	for (int32_t row = start_y; row <= end_y; row++)
+	{
+		int32_t col_start = (row == start_y) ? start_x : 0;
+		int32_t col_end = (row == end_y) ? end_x : total.x - 1;
+		debug_view_char const *rowdata = viewdata + (row * total.x);
+
+		std::wstring::size_type const line_start = text.length();
+		for (int32_t col = col_start; col <= col_end; ++col)
+			text += wchar_t(rowdata[col].byte);
+
+		// Trim trailing whitespace on each line
+		std::wstring::size_type const nonblank = text.find_last_not_of(L"\t\n\v\r ");
+		if (nonblank != std::wstring::npos)
+			text.resize((std::max)(line_start, nonblank + 1));
+		if (row < end_y)
+			text += L"\r\n";
+	}
+
+	m_view->set_visible_size(old_visible);
+	m_view->set_visible_position(old_pos);
+	return text;
+}
+
+
+void debugview_info::clear_selection()
+{
+	if (m_has_selection)
+	{
+		m_has_selection = false;
+		m_selecting = false;
+		InvalidateRect(m_wnd, nullptr, FALSE);
+	}
+}
+
+
+bool debugview_info::has_selection() const
+{
+	return m_has_selection && (m_sel_start.x != m_sel_end.x || m_sel_start.y != m_sel_end.y);
+}
+
+
+debug_view_xy debugview_info::screen_to_view_pos(int x, int y) const
+{
+	debug_view_xy const topleft = m_view->visible_position();
+	debug_view_xy const total = m_view->total_size();
+	debug_view_xy pos;
+	pos.x = std::max(0, std::min<int>(topleft.x + x / (int)metrics().debug_font_width(), total.x - 1));
+	pos.y = std::max(0, std::min<int>(topleft.y + y / (int)metrics().debug_font_height(), total.y - 1));
+	return pos;
+}
+
+
+void debugview_info::begin_selection(int x, int y)
+{
+	m_sel_start = screen_to_view_pos(x, y);
+	m_sel_end = m_sel_start;
+	m_selecting = true;
+	m_has_selection = false;
+	SetCapture(m_wnd);
+}
+
+
+void debugview_info::extend_selection(int x, int y)
+{
+	m_sel_end = screen_to_view_pos(x, y);
+	m_has_selection = (m_sel_start.x != m_sel_end.x || m_sel_start.y != m_sel_end.y);
+	InvalidateRect(m_wnd, nullptr, FALSE);
+}
+
+
 void debugview_info::draw_contents(HDC windc)
 {
 	debug_view_char const *viewdata = m_view->viewdata();
@@ -491,10 +730,31 @@ void debugview_info::draw_contents(HDC windc)
 	int const oldbkmode = GetBkMode(dc);
 	SetBkMode(dc, TRANSPARENT);
 
+	// Compute normalized selection range in view coordinates
+	debug_view_xy const topleft = m_view->visible_position();
+	int32_t sel_min_y = 0, sel_max_y = -1, sel_min_x = 0, sel_max_x = 0;
+	bool draw_selection = m_has_selection;
+	if (draw_selection)
+	{
+		sel_min_y = (std::min)(m_sel_start.y, m_sel_end.y);
+		sel_max_y = (std::max)(m_sel_start.y, m_sel_end.y);
+		if (m_sel_start.y < m_sel_end.y || (m_sel_start.y == m_sel_end.y && m_sel_start.x <= m_sel_end.x))
+		{
+			sel_min_x = m_sel_start.x;
+			sel_max_x = m_sel_end.x;
+		}
+		else
+		{
+			sel_min_x = m_sel_end.x;
+			sel_max_x = m_sel_start.x;
+		}
+	}
+
 	// iterate over rows and columns
 	for (uint32_t row = 0; row < visarea.y; row++)
 	{
 		bool do_filldown = (row == (visarea.y - 1)) && need_filldown;
+		int32_t const view_row = topleft.y + row;
 
 		// loop twice; once to fill the background and once to draw the text
 		for (int iter = 0; iter < 2; iter++)
@@ -520,13 +780,42 @@ void debugview_info::draw_contents(HDC windc)
 			// iterate over columns
 			for (uint32_t col = 0; col < visarea.x; col++)
 			{
+				// Check if this cell is in the selection
+				int32_t const view_col = topleft.x + col;
+				bool in_selection = false;
+				if (draw_selection && view_row >= sel_min_y && view_row <= sel_max_y)
+				{
+					if (sel_min_y == sel_max_y)
+						in_selection = (view_col >= sel_min_x && view_col <= sel_max_x);
+					else if (view_row == sel_min_y)
+						in_selection = (view_col >= sel_min_x);
+					else if (view_row == sel_max_y)
+						in_selection = (view_col <= sel_max_x);
+					else
+						in_selection = true;
+				}
+
+				// Compute effective attribute — force selection highlight
+				u8 effective_attrib = viewdata[col].attrib;
+				if (in_selection)
+					effective_attrib = 0xFF; // special marker for selection
+
 				// if the attribute changed, adjust the colors
-				if (viewdata[col].attrib != last_attrib)
+				if (effective_attrib != last_attrib)
 				{
 					COLORREF oldbg = bgcolor;
 
 					// pick new colors
-					std::tie(fgcolor, bgcolor) = metrics().view_colors(viewdata[col].attrib);
+					if (effective_attrib == 0xFF)
+					{
+						// Selection highlight: white text on blue background
+						fgcolor = RGB(0xFF, 0xFF, 0xFF);
+						bgcolor = RGB(0x33, 0x66, 0xCC);
+					}
+					else
+					{
+						std::tie(fgcolor, bgcolor) = metrics().view_colors(viewdata[col].attrib);
+					}
 
 					// flush any pending drawing
 					if (count > 0)
@@ -568,7 +857,7 @@ void debugview_info::draw_contents(HDC windc)
 						DeleteObject(bgbrush);
 						bgbrush = CreateSolidBrush(bgcolor);
 					}
-					last_attrib = viewdata[col].attrib;
+					last_attrib = effective_attrib;
 				}
 
 				// add this character to the buffer
@@ -862,6 +1151,32 @@ LRESULT debugview_info::view_proc(UINT message, WPARAM wparam, LPARAM lparam)
 			{
 				switch (wparam)
 				{
+							// Ctrl+C: copy selection (or visible if no selection)
+				case 'C':
+					if (GetAsyncKeyState(VK_CONTROL) & 0x8000)
+					{
+						std::wstring text = has_selection() ? get_selected_text() : get_visible_text();
+						if (!text.empty())
+							copy_to_clipboard(text);
+						m_owner.set_ignore_char_lparam(lparam);
+					}
+					break;
+
+				// Ctrl+A: select all
+				case 'A':
+					if (GetAsyncKeyState(VK_CONTROL) & 0x8000)
+					{
+						debug_view_xy const total = m_view->total_size();
+						m_sel_start.x = 0;
+						m_sel_start.y = 0;
+						m_sel_end.x = total.x - 1;
+						m_sel_end.y = total.y - 1;
+						m_has_selection = true;
+						InvalidateRect(m_wnd, nullptr, FALSE);
+						m_owner.set_ignore_char_lparam(lparam);
+					}
+					break;
+
 				case VK_UP:
 					m_view->process_char(DCH_UP);
 					m_owner.set_ignore_char_lparam(lparam);
@@ -963,8 +1278,23 @@ LRESULT debugview_info::view_proc(UINT message, WPARAM wparam, LPARAM lparam)
 			m_view->set_cursor_visible(false);
 		break;
 
-	// mouse click
+	// mouse click — start text selection on left button
 	case WM_LBUTTONDOWN:
+		{
+			// Start text selection with left mouse button
+			begin_selection(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
+			SetFocus(m_wnd);
+
+			// Also process the click for the view (breakpoint toggles, etc.)
+			debug_view_xy const topleft = m_view->visible_position();
+			debug_view_xy const visiblesize = m_view->visible_size();
+			debug_view_xy newpos;
+			newpos.x = std::max(std::min<int>(topleft.x + GET_X_LPARAM(lparam) / metrics().debug_font_width(), topleft.x + visiblesize.x - 1), 0);
+			newpos.y = std::max(std::min<int>(topleft.y + GET_Y_LPARAM(lparam) / metrics().debug_font_height(), topleft.y + visiblesize.y - 1), 0);
+			m_view->process_click(DCK_LEFT_CLICK, newpos);
+			break;
+		}
+
 	case WM_MBUTTONDOWN:
 		{
 			debug_view_xy const topleft = m_view->visible_position();
@@ -972,10 +1302,28 @@ LRESULT debugview_info::view_proc(UINT message, WPARAM wparam, LPARAM lparam)
 			debug_view_xy newpos;
 			newpos.x = std::max(std::min<int>(topleft.x + GET_X_LPARAM(lparam) / metrics().debug_font_width(), topleft.x + visiblesize.x - 1), 0);
 			newpos.y = std::max(std::min<int>(topleft.y + GET_Y_LPARAM(lparam) / metrics().debug_font_height(), topleft.y + visiblesize.y - 1), 0);
-			m_view->process_click((message == WM_LBUTTONDOWN) ? DCK_LEFT_CLICK : DCK_MIDDLE_CLICK, newpos);
+			m_view->process_click(DCK_MIDDLE_CLICK, newpos);
 			SetFocus(m_wnd);
 			break;
 		}
+
+	// mouse move — extend selection while dragging
+	case WM_MOUSEMOVE:
+		if (m_selecting && (wparam & MK_LBUTTON))
+		{
+			extend_selection(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
+		}
+		break;
+
+	// mouse release — finish selection
+	case WM_LBUTTONUP:
+		if (m_selecting)
+		{
+			extend_selection(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
+			m_selecting = false;
+			ReleaseCapture();
+		}
+		break;
 
 	// right click
 	case WM_RBUTTONDOWN:
