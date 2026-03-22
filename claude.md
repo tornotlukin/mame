@@ -30,8 +30,74 @@ When modifying `debugremote.cpp`, check these for correct API usage:
 - `src/emu/debug/textbuf.h` — `text_buffer_clear`, `text_buffer_lines` iterator
 - `src/emu/machine.h` — `disable_side_effects()` RAII guard for suppressing memory read side effects
 
-## Build & Run
+## Build Environment
 
-- Build: standard MAME build process (`make` or equivalent)
-- Run with remote debugger: `mame <game> -debug -debugger remote -debugger_port 12345`
-- Host/port options: `-debugger_host <addr> -debugger_port <port>` (same as GDB stub)
+- **MSYS2 location:** `H:\_DEV\msys64` (pre-packaged MAME build tools from http://mamedev.org/tools/)
+- **GCC version:** 11.2.0 (included in the pre-packaged tools)
+- **User also has VS 2022** available for builds
+
+## Building MAME (Windows — CRITICAL notes)
+
+### Shell and Environment Setup
+
+Do NOT use `--login` flag with bash — it changes the working directory to `~` and loses the MAME source path. Use plain `-c` instead:
+
+```bash
+"H:/_DEV/msys64/usr/bin/bash.exe" -c "<commands>"
+```
+
+The following environment variables MUST be set explicitly — they are NOT inherited from the Windows environment when running bash from Claude Code:
+
+```bash
+export PATH=/h/_DEV/msys64/mingw64/bin:/h/_DEV/msys64/usr/bin:$PATH
+export OS=Windows_NT        # CRITICAL: makefile checks this first, fails with uname detection error if missing
+export MSYSTEM=MINGW64      # CRITICAL: tells makefile which toolchain to use
+export MINGW_PREFIX=/mingw64
+export TEMP=/tmp            # CRITICAL: GCC writes temp files; without this it tries C:\WINDOWS\ which is permission denied
+export TMP=/tmp             # Same as TEMP
+```
+
+### Full Build Command Template
+
+```bash
+"H:/_DEV/msys64/usr/bin/bash.exe" -c "export PATH=/h/_DEV/msys64/mingw64/bin:/h/_DEV/msys64/usr/bin:\$PATH && export OS=Windows_NT && export MSYSTEM=MINGW64 && export MINGW_PREFIX=/mingw64 && export TEMP=/tmp && export TMP=/tmp && make SUBTARGET=<name> SOURCES=<path> REGENIE=1 -j5 2>&1"
+```
+
+### Subset Build (faster — only builds specific drivers)
+
+```bash
+make SUBTARGET=cps1test SOURCES=src/mame/capcom/cps1.cpp REGENIE=1 -j5
+```
+
+- Produces `cps1test.exe` instead of full `mame.exe`
+- `REGENIE=1` is required when adding new source files or changing build config
+- `-j5` for parallel compilation (CPU cores + 1)
+
+### VS2022 Project Generation
+
+```bash
+make vs2022 SUBTARGET=cps1test SOURCES=src/mame/capcom/cps1.cpp
+```
+
+Projects go to `build/projects/windows/mame/vs2022/`. Same env vars required.
+
+### Common Build Errors and Fixes
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `Unable to detect OS from uname -a` | `OS` env var not set | `export OS=Windows_NT` |
+| `Cannot create temporary file in C:\WINDOWS\` | `TEMP`/`TMP` pointing to protected dir | `export TEMP=/tmp && export TMP=/tmp` |
+| `No targets specified and no makefile found` | Used `--login` flag, shell is in `~` | Remove `--login`, use `-c` so CWD stays in MAME source |
+| `MSYSTEM` not set warnings | env var missing | `export MSYSTEM=MINGW64 && export MINGW_PREFIX=/mingw64` |
+
+## Running the Built Executable
+
+```bash
+./cps1test qadjr -debug -debugger remote -debugger_port 12345
+```
+
+- Game driver comes right after the executable name, no flag
+- `-debug` enables the debugger (single dash, not double)
+- `-debugger remote` selects the remote TCP module
+- `-debugger_port 12345` sets the listening port
+- `-debugger_host localhost` sets the listening address (default: localhost)
