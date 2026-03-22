@@ -62,7 +62,10 @@ protected:
 	enum
 	{
 		ID_CONTEXT_COPY_VISIBLE = 1,
-		ID_CONTEXT_PASTE
+		ID_CONTEXT_PASTE,
+		ID_CONTEXT_COPY_SELECTION,
+		ID_CONTEXT_COPY_ALL,
+		ID_CONTEXT_SELECT_ALL
 	};
 
 	template <typename T> T *view() const { return downcast<T *>(m_view); }
@@ -83,12 +86,29 @@ private:
 
 	static void register_window_class();
 
+	// Selection helpers
+	void copy_to_clipboard(std::wstring const &text);
+	std::wstring get_visible_text();
+	std::wstring get_all_text();
+	std::wstring get_selected_text();
+	void clear_selection();
+	bool has_selection() const;
+	void begin_selection(int x, int y);
+	void extend_selection(int x, int y);
+	debug_view_xy screen_to_view_pos(int x, int y) const;
+
 	debugwin_info   &m_owner;
 	debug_view      *m_view;
 	HWND            m_wnd;
 	HWND            m_hscroll;
 	HWND            m_vscroll;
 	HMENU           m_contextmenu;
+
+	// Text selection state
+	bool            m_selecting;        // true during mouse drag
+	bool            m_has_selection;     // true if selection exists
+	debug_view_xy   m_sel_start;        // selection anchor (in view coordinates)
+	debug_view_xy   m_sel_end;          // selection endpoint (in view coordinates)
 
 	static bool     s_window_class_registered;
 };
