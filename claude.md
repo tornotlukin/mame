@@ -2,7 +2,7 @@
 
 ## Key Documentation
 
-- **MAME Debugger Syntax Reference (for LLM):** `docs/llm-debugger-reference.md`
+- **MAME Debugger Syntax Reference (for LLM):** `MCP/docs/llm-debugger-reference.md`
   - Consult this whenever writing or generating MAME debugger commands
   - Contains exact syntax, correct/wrong examples, and common patterns
   - Numbers are HEX by default in MAME debugger — do not use `0x` prefix unnecessarily
@@ -16,9 +16,20 @@
 
 ## Project Structure (LLM Debugger additions)
 
-- `src/osd/modules/debugger/debugremote.cpp` — TCP JSON debug module (new)
-- `src/osd/modules/lib/osdobj_common.cpp` — Module registration (modified)
-- `scripts/src/osd/modules.lua` — Build config (modified)
+Self-contained addon code lives under `MCP/` (see `MCP/README.md` and
+`MCP/INTEGRATION.md` for the full manifest of how it touches core MAME):
+
+- `MCP/bridge/` — Python MCP server + TCP client + tests (the actual MCP code)
+- `MCP/docs/llm-debugger-reference.md` — debugger syntax reference for the LLM
+- `MCP/launch/start_debugger.bat` — Windows launcher
+- `.mcp.json` — at repo root (Claude Code discovers it); points to `MCP/bridge/mcp_server.py`
+
+Core-MAME touch-points (kept in the source tree because they compile into `mame.exe`):
+
+- `src/osd/modules/debugger/debugremote.cpp` / `debugremote_tcp.h` — TCP JSON debug module (new)
+- `src/osd/modules/lib/osdobj_common.cpp` — Module registration (modified, +1 line)
+- `scripts/src/osd/modules.lua` — Build config (modified, +2 lines)
+- `src/osd/modules/debugger/debugwin.cpp`, `win/debugviewinfo.{cpp,h}` — Win32 UI text-selection feature (modified)
 
 ## Key Source References
 
