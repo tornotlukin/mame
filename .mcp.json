@@ -4,7 +4,7 @@
       "type": "stdio",
       "command": "python",
       "args": [
-        "bridge/mcp_server.py"
+        "MCP/bridge/mcp_server.py"
       ],
       "env": {
         "MAME_DEBUG_HOST": "localhost",

@@ -2,7 +2,7 @@
   "mcpServers": {
     "mame-debugger": {
       "command": "python",
-      "args": ["bridge/mcp_server.py"],
+      "args": ["MCP/bridge/mcp_server.py"],
       "env": {
         "MAME_DEBUG_HOST": "localhost",
         "MAME_DEBUG_PORT": "12345"
