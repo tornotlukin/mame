@@ -328,6 +328,10 @@ void pacman_state::draw_sprites(screen_device &screen, bitmap_ind16 &bitmap, con
 				m_palette->transpen_mask(*m_gfxdecode->gfx(1), color & 0x3f, 0));
 
 		/* also plot the sprite with wraparound (tunnel in Crush Roller) */
+		// pac-man-4ever: SKIP the wraparound duplicate - jrpacman wraps along the OTHER axis
+		// (handled by the region system); this legacy double-draw ghosts sprites placed in the
+		// bottom strip (e.g. the fruit on-deck bay at sx=267 echoed at sx=11).
+		if (!m_jrpac_abs)
 		m_gfxdecode->gfx(1)->transmask(bitmap,spriteclip,
 				// pac-man-4ever: per-sprite bank select. Bit7 of the sprite color byte
 				// (unused by color, which is &0x1f) promotes this one sprite to bank 1,
@@ -383,6 +387,8 @@ void pacman_state::draw_sprites(screen_device &screen, bitmap_ind16 &bitmap, con
 				m_palette->transpen_mask(*m_gfxdecode->gfx(1), color & 0x3f, 0));
 
 		/* also plot the sprite with wraparound (tunnel in Crush Roller) */
+		// pac-man-4ever: SKIP the wraparound duplicate (see note in the first loop).
+		if (!m_jrpac_abs)
 		m_gfxdecode->gfx(1)->transmask(bitmap,spriteclip,
 				// pac-man-4ever: per-sprite bank select. Bit7 of the sprite color byte
 				// (unused by color, which is &0x1f) promotes this one sprite to bank 1,
@@ -414,8 +420,7 @@ void pacman_state::draw_sprites(screen_device &screen, bitmap_ind16 &bitmap, con
 			int code  = (img >> 2) | ((m_spritebank | ((col >> 7) & 1)) << 6) | ((m_sprhi ? (m_sprhi[8 + e] & 1) : 0) << 7);  // pac-man-4ever: bit7 = per-sprite high bank (256-sprite set); sprhi[8..9] = extended sprites
 			m_gfxdecode->gfx(1)->transmask(bitmap, spriteclip, code, color, fx, fy, sx, sy,
 					m_palette->transpen_mask(*m_gfxdecode->gfx(1), color & 0x3f, 0));
-			m_gfxdecode->gfx(1)->transmask(bitmap, spriteclip, code, color, fx, fy, sx - 256, sy,
-					m_palette->transpen_mask(*m_gfxdecode->gfx(1), color & 0x3f, 0));
+			// pac-man-4ever: no wraparound duplicate (jrpacman wraps on the other axis; see above)
 		}
 	}
 }
@@ -671,10 +676,14 @@ TILEMAP_MAPPER_MEMBER(pacman_state::jrpacman_scan_rows)
 	col -= 2;
 	if (col & 0x20)
 	{
-		if (row & 0x20)
-			return 0x77f; // outside visible area
+		// pac-man-4ever: the 4 edge strips (HUD rows) have RAM for only 30 of 54 cells each.
+		// Remapped (user HUD layout 2026-07-02): the live 30 cells are CENTERED - display cols
+		// 0C-29 hex (native rows 12-41) -> slots 2-31 (exact budget, no spares); the dead 24
+		// split 12+12 at the screen ends. Addr for display col Dc: block + (43 - Dc).
+		if (row >= 14 && row <= 43)
+			return (row - 12) + (((col & 0x3) | 0x38) << 5);
 		else
-			return row + (((col & 0x3) | 0x38) << 5);
+			return 0x77f; // outside visible area
 	}
 	else
 		return col + (row << 5);
