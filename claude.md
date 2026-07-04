@@ -1,5 +1,26 @@
 # CLAUDE.md — MAME LLM Debugger Project
 
+## COMMIT / BRANCH HYGIENE (user directive 2026-07-04)
+
+This fork hosts TWO unrelated work streams — keep their commits SEPARATE from now on:
+
+1. **The LLM-debugger addon** (MCP/, debugremote, debugger UI tweaks) → stays on the
+   `llm-debugger` branch.
+2. **Game-board mods** (driver changes for game projects, e.g. `src/mame/pacman/*` for
+   pac-man-4ever) → each game mod gets its **own branch** so it can be shared/PR'd as a
+   pure mod. A **CPS2 4-player fighting-game mod is planned** — when it starts, create
+   e.g. `cps2-4p` off upstream and commit its `src/mame/capcom/*` changes THERE, never on
+   `llm-debugger`.
+
+Historical note: commits up to `45a6e5d9449` (2026-07-04) mixed both streams on
+`llm-debugger` (the three `jrpacman:` commits — sprite 256-set, wraparound/HUD remap,
+6.144MHz clock). If a clean pac-man-4ever branch is ever needed, cherry-pick exactly the
+`jrpacman:`-prefixed commits onto upstream; the game repo's `drivers/` folder also carries
+the full files + `pac4eva-mame.patch` as a branch-independent fallback.
+
+Build note: `pac4eva.exe` (the exe the game project launches) is built from THIS tree via
+the game repo's `tools/build_mame.sh` — whichever branch is checked out is what it plays.
+
 ## Key Documentation
 
 - **MAME Debugger Syntax Reference (for LLM):** `MCP/docs/llm-debugger-reference.md`
