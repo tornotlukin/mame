@@ -157,6 +157,7 @@ void jrpacman_state::main_map(address_map &map)
 	map(0x5100, 0x5100).portr("P3");
 	map(0x5101, 0x5101).portr("P4");
 	map(0x8000, 0xdfff).rom();
+	map(0xe000, 0xffff).rom();     // pac-man-4ever: expansion ROM (screens/data; plaintext - decrypt table is zero here)
 }
 
 
@@ -223,7 +224,7 @@ static INPUT_PORTS_START( jrpacman )
 	PORT_DIPSETTING(    0x01, DEF_STR( 1C_1C ) )
 	PORT_DIPSETTING(    0x02, DEF_STR( 1C_2C ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( Free_Play ) )
-	PORT_DIPNAME( 0x0c, 0x08, DEF_STR( Lives ) )            PORT_DIPLOCATION("SW1:3,4")
+	PORT_DIPNAME( 0x0c, 0x00, DEF_STR( Lives ) )            PORT_DIPLOCATION("SW1:3,4")   // pac-man-4ever: default 1 (per-round lives; ROM caps at 3)
 	PORT_DIPSETTING(    0x00, "1" )
 	PORT_DIPSETTING(    0x04, "2" )
 	PORT_DIPSETTING(    0x08, "3" )
@@ -291,6 +292,11 @@ void jrpacman_state::jrpacman(machine_config &config)
 	pacman(config);
 
 	// basic machine hardware
+	// pac-man-4ever: the 4P board taps the crystal at /3 (6.144MHz, was /6): four pacs +
+	// five ghosts exceed the stock Z80 budget (measured: main loop at ~55/120 with 4P).
+	// Game speed is frame-locked (vblank IRQ), sound/video have their own clocks - the
+	// CPU just stops missing frames.
+	m_maincpu->set_clock(18.432_MHz_XTAL / 3);
 	m_maincpu->set_addrmap(AS_PROGRAM, &jrpacman_state::main_map);
 	m_maincpu->set_addrmap(AS_IO, &jrpacman_state::port_map);
 
@@ -352,6 +358,7 @@ ROM_START( jrpacman )
 	ROM_LOAD( "jr.pac-man_8h_11-9-83.8h",    0x8000, 0x2000, CRC(35f1fc6e) SHA1(b84b34560b9aae18b24274712b052283faa01730) )
 	ROM_LOAD( "jr.pac-man_8j_11-9-83.8j",    0xa000, 0x2000, CRC(9737099e) SHA1(07d912a61824323c8fc1b8bd0da89172d4f70b91) )
 	ROM_LOAD( "jr.pac-man_8k_11-9-83.8k",    0xc000, 0x2000, CRC(5252dd97) SHA1(18bd4d5381656120e4242811006c20776774de4d) )
+	ROM_LOAD_OPTIONAL( "pac4eva.8x",         0xe000, 0x2000, CRC(d8f49994) SHA1(0631457264ff7f8d5fb1edc2c0211992a67c73e6) ) // pac-man-4ever: expansion ROM (plaintext; decrypt table is zero over 0xe000+)
 
 	ROM_REGION( 0x6000, "gfx1", 0 )   // pac-man-4ever: L1 layout = tiles 0x2000 + sprites 0x4000 (256). Upper 128 sprites blank in the stock set, painted via the gfx import tool in modroms.
 	ROM_LOAD( "jr.pac-man_2c_11-9-83.2c",    0x0000, 0x2000, CRC(0527ff9b) SHA1(37fe3176b0d125b7d629e108e7ebdc1196e4a132) ) /* tiles (512) */
