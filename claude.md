@@ -1,27 +1,55 @@
-# CLAUDE.md — MAME LLM Debugger Project
+# CLAUDE.md — MAME Fork (LLM Debugger + Game Mods + Android)
 
-## COMMIT / BRANCH HYGIENE (user directive 2026-07-04)
+## Repo / Remotes
 
-This fork hosts TWO unrelated work streams — keep their commits SEPARATE from now on:
+- This is a personal fork: `origin` = https://github.com/tornotlukin/mame.git,
+  `upstream` = https://github.com/mamedev/mame.git. Base: **mame0288** tag.
+- Installed play copy: **`H:\mame\mame.exe`** = full 0.288 build + llm-debugger
+  (built from this tree); `H:\mame\mameold.exe` = stock 0.288 backup.
 
-1. **The LLM-debugger addon** (MCP/, debugremote, debugger UI tweaks) → stays on the
-   `llm-debugger` branch.
-2. **Game-board mods** (driver changes for game projects, e.g. `src/mame/pacman/*` for
-   pac-man-4ever) → each game mod gets its **own branch** so it can be shared/PR'd as a
-   pure mod. A **CPS2 4-player fighting-game mod is planned** — when it starts, create
-   e.g. `cps2-4p` off upstream and commit its `src/mame/capcom/*` changes THERE, never on
-   `llm-debugger`.
+## BRANCH MAP / COMMIT HYGIENE (directive 2026-07-04, split executed 2026-07-05)
 
-Historical note: RESOLVED 2026-07-05 — the branches were surgically split. All
-`jrpacman:` commits now live on **`jrpacman-4p`** (off `mame0288`); `llm-debugger` was
-rewritten to contain only debugger/docs commits (force-pushed). The game repo's
-`drivers/` folder also carries the full files + `pac4eva-mame.patch` as a
-branch-independent fallback. A planned **`rp6-android`** branch will merge
-`llm-debugger` + `jrpacman-4p` + the MAME4droid myosd OSD overlay as the composition
-branch the Android core builds from (see `workshop-mame-android.md`).
+Work streams are SEPARATE branches, all based on `mame0288`:
+
+| Branch | Contents | Rule |
+|--------|----------|------|
+| `llm-debugger` | MCP/ addon, debugremote, debugger UI tweaks, project docs | NO game-driver changes |
+| `jrpacman-4p` | `jrpacman:` game-board mods (`src/mame/pacman/*`) for pac-man-4ever | pure mod, PR-able |
+| `rp6-android` | **Composition**: merge of the above + MAME4droid myosd OSD overlay + Android build glue | what the Android core builds from (see `workshop-mame-android.md`) |
+| (planned) `cps2-4p` | CPS2 4-player fighting-game mod (`src/mame/capcom/*`) | own branch off upstream when started |
+
+New commits go to the branch that owns the stream — never mix. Merge streams only in
+`rp6-android` (or future composition branches).
 
 Build note: `pac4eva.exe` (the exe the game project launches) is built from THIS tree via
-the game repo's `tools/build_mame.sh` — whichever branch is checked out is what it plays.
+the game repo's `tools/build_mame.sh` — **whichever branch is checked out is what it
+plays**, so check out `jrpacman-4p` (or `rp6-android`) before building pac4eva; plain
+`llm-debugger` has no game mods. The game repo's `drivers/` folder + `pac4eva-mame.patch`
+remain a branch-independent fallback.
+
+## Android Project (RP6 / MAME4droid)
+
+Goal: MAME on the Retroid Pocket 6 with full controller access, built from OUR fork
+(this tree) — full plan/status in **`workshop-mame-android.md`**.
+
+- MAME4droid clones (inspection/app shell): `H:\_DEV\mame4droid\MAME4droid-Current`
+  (the one that matters) and `MAME4droid_Native` (legacy 0.139, ignore).
+- Native architecture: APK's Gradle builds only a thin JNI shim; it `dlopen()`s
+  **`libMAME4droid.so`** = MAME core + `src/osd/myosd/` overlay, built out-of-band from
+  a MAME tree (ours, on `rp6-android`) with DIY lua/makefile glue + NDK.
+- Android SDK: `H:\_DEV\android\SDK` (platform 36, build-tools, adb). NDK pinned by the
+  app: **28.2.13676358** (r28c) — installed side-by-side with NDK 30 (ignored).
+- Key input facts: funnel is Java `GameController.emulatorInputValues[]` +
+  `MYOSD_NUM_JOY=4` cap; native `input.cpp` already registers 6-axis MAME devices;
+  L3/R3 commented out at `input.cpp:172`.
+
+## Related Tooling (outside this repo)
+
+- **`/mame-rom` skill** (user-global, `~/.claude/skills/mame-rom/`): parses any game's
+  ROM layout from this tree's source + drives the live debugger; per-game findings
+  persist in `docs/roms/<game>.md` here.
+- Locations config for that skill: `.claude/mame-rom-read-loc.md` (project) or
+  `~/.claude/mame-rom-read-loc.md` (global).
 
 ## Key Documentation
 
@@ -34,8 +62,13 @@ the game repo's `tools/build_mame.sh` — whichever branch is checked out is wha
 - **MAME Debugger Documentation (official):** `docs/source/debugger/` (RST files)
   - Full reference for all debugger commands, expression syntax, device specs
 
-- **Workshop File:** `workshop-debugger-llm.md`
-  - Tracks all architecture decisions, open questions, and progress for the LLM debugger project
+- **Workshop Files** (persistent design/progress trackers):
+  - `workshop-debugger-llm.md` — LLM debugger architecture decisions & progress
+  - `workshop-rom-reading.md` — design history of the `/mame-rom` skill (built, global)
+  - `workshop-mame-android.md` — RP6/Android port: decisions, Phase-0 findings, plan
+- **Full MAME 0.289 manual (converted PDF):** `docs/MAME289DOCS.md` — ~250K tokens,
+  NEVER read whole; grep then read ranges (index/recipes:
+  `~/.claude/skills/mame-rom/reference/mame-docs-index.md`)
 
 ## Project Structure (LLM Debugger additions)
 
