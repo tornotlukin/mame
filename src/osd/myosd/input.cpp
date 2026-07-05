@@ -591,12 +591,13 @@ void my_osd_interface::customize_input_type_list(std::vector<input_type_entry> &
         {
 
             case IPT_UI_SELECT://DAV
-                //entry.defseq(SEQ_TYPE_STANDARD) |= JOYCODE_BUTTON1;
-                entry.defseq(SEQ_TYPE_STANDARD) |= JOYCODE_BUTTON2;//ANDROID default
+                // MAMEalicious: B1 = select (desktop convention; physical B on
+                // Retroid via the app's A/B swap) — was BUTTON2 "ANDROID default"
+                entry.defseq(SEQ_TYPE_STANDARD) |= JOYCODE_BUTTON1;
                 break;
             case IPT_UI_BACK://DAV
-                //entry.defseq(SEQ_TYPE_STANDARD) |= JOYCODE_BUTTON2;
-                entry.defseq(SEQ_TYPE_STANDARD) |= JOYCODE_BUTTON1;//ANDROID default
+                // MAMEalicious: B2 = back out (physical A on Retroid)
+                entry.defseq(SEQ_TYPE_STANDARD) |= JOYCODE_BUTTON2;
                 break;
             case IPT_UI_MENU://DAV
                 //entry.defseq(SEQ_TYPE_STANDARD).set(KEYCODE_TAB, input_seq::or_code, JOYCODE_START , JOYCODE_SELECT);
