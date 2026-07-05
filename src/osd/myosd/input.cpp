@@ -150,6 +150,11 @@ void my_osd_interface::input_init()
         assignments.emplace_back(IPT_POSITIONAL,SEQ_TYPE_DECREMENT,
                                  input_seq(make_code(ITEM_CLASS_SWITCH, ITEM_MODIFIER_NONE, ITEM_ID_BUTTON6)));
 
+        // MAMEalicious: M1 (BUTTON11) opens the MAME menu (TAB) by default —
+        // remappable like any input via Input Assignments (general) > User Interface.
+        assignments.emplace_back(IPT_UI_MENU,SEQ_TYPE_STANDARD,
+                                 input_seq(make_code(ITEM_CLASS_SWITCH, ITEM_MODIFIER_NONE, ITEM_ID_BUTTON11)));
+
         //assignments.emplace_back(IPT_SELECT,SEQ_TYPE_STANDARD,
          //                        input_seq(make_code(ITEM_CLASS_SWITCH, ITEM_MODIFIER_NONE, ITEM_ID_BUTTON2)));
 
