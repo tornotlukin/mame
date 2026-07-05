@@ -12,6 +12,10 @@
 #include "uiinput.h"
 #include "render.h"
 
+// DAV HACK
+// Include netplay header to check connection status and block MAME menu during Netplay
+#include "../osd/myosd/netplay.h"
+// END DAV HACK
 
 /***************************************************************************
     CONSTANTS
@@ -133,6 +137,18 @@ void ui_input_manager::reset()
 }
 
 
+// DAV HACK
+	// Block the MAME UI menu from opening if we are in an active Netplay session.
+	// This prevents the game from pausing and breaking lock-step synchronization.
+	if (code == IPT_UI_MENU) {
+		netplay_t *handle = netplay_get_handle();
+		if (handle && handle->has_connection && handle->has_begun_game) {
+			m_seqpressed[code] = SEQ_PRESSED_RESET;
+			m_next_repeat[code] = 0;
+			return false;
+		}
+	}
+// END DAV HACK
 
 /***************************************************************************
     USER INTERFACE SEQUENCE READING

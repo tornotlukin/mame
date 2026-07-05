@@ -44,6 +44,9 @@
 #include <emscripten.h>
 #endif
 
+// DAV HACK
+#include "../osd/myosd/netplay.h"
+// END DAV HACK
 
 
 //**************************************************************************
@@ -262,6 +265,15 @@ void running_machine::start()
 	manager().update_machine();
 }
 
+// DAV HACK
+
+	netplay_t* handle = netplay_get_handle();
+	if (handle && handle->has_connection)
+	{
+		m_base_time = handle->basetime;
+	}
+
+// END DAV HACK
 
 //-------------------------------------------------
 //  run - execute the machine

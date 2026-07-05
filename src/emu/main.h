@@ -45,6 +45,10 @@ public:
 	// construction/destruction
 	emulator_info() = default;
 
+// DAV HACK
+	inline static std::string myosd_droid_version;
+// END DAV HACK
+
 	static const char *get_appname();
 	static const char *get_appname_lower();
 	static const char *get_configname();

@@ -48,6 +48,40 @@
 
 namespace ui {
 
+//DAV HACK
+class menu_confirm_exit_frontend : public menu
+{
+public:
+	menu_confirm_exit_frontend(mame_ui_manager &mui, render_target &target)
+		: menu(mui, target)
+	{
+		set_needs_prev_menu_item(false);
+		set_heading(_("Are you sure you want to quit?"));
+	}
+
+	virtual ~menu_confirm_exit_frontend() override { }
+
+private:
+	virtual void populate() override
+	{
+		item_append(_("Quit"), 0, nullptr);
+		item_append(_("Return to MAME4droid"), 0, nullptr);
+	}
+
+	virtual bool handle(event const *ev) override
+	{
+		if (ev && (IPT_UI_SELECT == ev->iptkey))
+		{
+			if (0 == selected_index())
+				machine().schedule_exit();
+			else
+				stack_pop();
+		}
+		return false;
+	}
+};
+//END DAV HACK
+
 namespace {
 
 std::pair<char const *, char const *> RIGHT_PANEL_NAMES[RP_LAST + 1] = {
@@ -1930,8 +1964,11 @@ bool menu_select_launch::handle_keys(u32 flags, int &iptkey)
 		else if (is_special_main_menu())
 		{
 			// this is the root session menu, exit
-			stack_pop();
-			machine().schedule_exit();
+//DAV HACK
+			//stack_pop();
+			//machine().schedule_exit();
+			menu::stack_push<menu_confirm_exit_frontend>(ui(), target());
+//END DAV HACK
 		}
 		return false;
 	}
@@ -3076,9 +3113,20 @@ std::tuple<int, bool, bool> menu_select_launch::update_toolbar_track(bool change
 			if (0 > m_clicked_line)
 			{
 				// backtrack button
-				stack_pop();
+//DAV HACK
+				//stack_pop();
+				//if (is_special_main_menu())
+					//machine().schedule_exit();
 				if (is_special_main_menu())
+				{
+					menu::stack_push<menu_confirm_exit_frontend>(ui(), target());
+				}
+				else
+				{
+					stack_pop();
 					machine().schedule_exit();
+				}
+//END DAV HACK
 				return std::make_tuple(IPT_UI_BACK, false, true);
 			}
 			else
