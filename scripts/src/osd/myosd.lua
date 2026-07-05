@@ -12,6 +12,10 @@
 
 dofile("modules.lua")
 
+-- Android is unix-like; drives 3rdparty configs (expat entropy, etc.)
+-- and unix conditionals throughout the build scripts.
+BASE_TARGETOS = "unix"
+
 
 function maintargetosdoptions(_target,_subtarget)
 	osdmodulestargetconf()
@@ -36,6 +40,19 @@ project ("osd_" .. _OPTIONS["osd"])
 	dofile("myosd_cfg.lua")
 	osdmodulesbuild()
 
+	-- myosd has no osdwindow layer; the bgfx renderer (added unconditionally
+	-- by osdmodulesbuild) needs window.h from a windowing OSD. myosd renders
+	-- through its own GLES pipeline, so drop the bgfx draw module entirely.
+	removefiles {
+		MAME_DIR .. "src/osd/modules/render/drawbgfx.cpp",
+		MAME_DIR .. "src/osd/modules/render/drawbgfx.h",
+		MAME_DIR .. "src/osd/modules/render/bgfxutil.cpp",
+		MAME_DIR .. "src/osd/modules/render/bgfxutil.h",
+		MAME_DIR .. "src/osd/modules/render/binpacker.cpp",
+		MAME_DIR .. "src/osd/modules/render/bgfx/*.cpp",
+		MAME_DIR .. "src/osd/modules/render/bgfx/*.h",
+	}
+
 	includedirs {
 		MAME_DIR .. "src/emu",
 		MAME_DIR .. "src/devices", -- accessing imagedev from debugger
@@ -57,6 +74,7 @@ project ("osd_" .. _OPTIONS["osd"])
 		MAME_DIR .. "src/osd/myosd/myosdmain.cpp",
 		MAME_DIR .. "src/osd/myosd/myosd-droid.cpp",
 		MAME_DIR .. "src/osd/myosd/myosd-droid.h",
+		MAME_DIR .. "src/osd/myosd/com_seleuco_mame4droid_Emulator.h",
 		MAME_DIR .. "src/osd/myosd/input.cpp",
 		MAME_DIR .. "src/osd/myosd/video.cpp",
 		MAME_DIR .. "src/osd/myosd/sound.cpp",

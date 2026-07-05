@@ -942,7 +942,7 @@ bool mame_ui_manager::update_and_render(render_target &target)
 	// DAV HACK: skip gameinfo screen if auto-start is enabled
 	{
 		const char* netplay_game = myosd_droid_get_netplay_force_game();
-		if (netplay_game && netplay_game[0] != ' ') {
+		if (netplay_game && netplay_game[0] != '\0') {
 			int idx = driver_list::find(netplay_game);
 			if (idx != -1) {
 				const game_driver &driver = driver_list::driver(idx);
@@ -954,8 +954,7 @@ bool mame_ui_manager::update_and_render(render_target &target)
 				opts.set_value(OPTION_THROTTLE, "1", OPTION_PRIORITY_CMDLINE);
 				opts.set_value(OPTION_SKIP_GAMEINFO, "1", OPTION_PRIORITY_CMDLINE);
 
-				osd_printf_warning("NETPLAY AUTOSTART: Got game '%s', driver idx: %d
-", netplay_game, idx);
+				osd_printf_warning("NETPLAY AUTOSTART: Got game '%s', driver idx: %d\n", netplay_game, idx);
 
 				driver_enumerator enumerator(machine().options(), driver.name);
 				enumerator.next();
@@ -975,20 +974,17 @@ bool mame_ui_manager::update_and_render(render_target &target)
 					netplay_send_disconnect(netplay_get_handle());
 					myosd_droid_clear_netplay_force_game();
 
-					std::string err = "Error loading ROM.
-Some files are missing or have a bad checksum.";
+					std::string err = "Error loading ROM.\nSome files are missing or have a bad checksum.";
 
 					// Draw the text box warning (simulates red window)
 					myosd_droid_netplay_warn(string_format("TOAST:%s", err.c_str()).c_str());
-					osd_printf_warning("NETPLAY AUTOSTART: FAILED audit for '%s'
-", netplay_game);
+					osd_printf_warning("NETPLAY AUTOSTART: FAILED audit for '%s'\n", netplay_game);
 				}
 			} else {
 				netplay_send_disconnect(netplay_get_handle());
 				myosd_droid_clear_netplay_force_game();
 				myosd_droid_netplay_warn(string_format("TOAST:Netplay: Unknown driver %s. Disconnected.", netplay_game).c_str());
-				osd_printf_warning("NETPLAY AUTOSTART: FAILED to find driver for '%s'
-", netplay_game);
+				osd_printf_warning("NETPLAY AUTOSTART: FAILED to find driver for '%s'\n", netplay_game);
 			}
 		}
 	}

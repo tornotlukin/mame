@@ -43,12 +43,20 @@ end
 				"-Wl,-soname,libmain.so"
 			}
 		end
-		links {
-			"EGL",
-			"GLESv1_CM",
-			"GLESv2",
-			"SDL2",
-		}
+		if _OPTIONS["osd"]=="myosd" then
+			links {
+				"EGL",
+				"GLESv1_CM",
+				"GLESv2",
+			}
+		else
+			links {
+				"EGL",
+				"GLESv1_CM",
+				"GLESv2",
+				"SDL2",
+			}
+		end
 
 	configuration {  }
 
@@ -154,9 +162,11 @@ end
 	links {
 		"osd_" .. _OPTIONS["osd"],
 	}
+	if _OPTIONS["osd"]~="myosd" then
 	links {
 		"qtdbg_" .. _OPTIONS["osd"],
 	}
+	end
 --if (STANDALONE~=true) then
 	links {
 		"formats",

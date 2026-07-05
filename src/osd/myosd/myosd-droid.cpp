@@ -35,7 +35,7 @@
 #include "myosd_core.h"
 #include "myosd_saf.h"
 
-#include "../../../android-MAME4droid/app/src/main/jni/com_seleuco_mame4droid_Emulator.h"
+#include "com_seleuco_mame4droid_Emulator.h" // local copy; app repo is a sibling checkout, not a parent dir
 
 #define MIN(a,b) ((a)<(b) ? (a) : (b))
 #define MAX(a,b) ((a)<(b) ? (b) : (a))

@@ -908,7 +908,7 @@ void netplay_ui_set_connection(netplay_t *handle, int value)
 
 void netplay_ui_set_delay(netplay_t *handle, int value)
 {
-    int original_value = value;
+    [[maybe_unused]] int original_value = value;
     if (value > 0) {
         value = value * 2; // Map UI visual frames to internal polling ticks (2 polls per frame)
     }
