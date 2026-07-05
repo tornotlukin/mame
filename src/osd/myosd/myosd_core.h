@@ -21,11 +21,13 @@ enum MYOSD_STATUS {
     MYOSD_START=1<<8,   MYOSD_SELECT=1<<9,
     MYOSD_A=1<<10,      MYOSD_B=1<<11,        MYOSD_C=1 << 12,     MYOSD_D=1 << 13,
     MYOSD_L1=1 << 14,    MYOSD_R1=1 << 15,
-    //TODO ajustar resto botones con java
-    //MYOSD_L3=1<<16,     MYOSD_R3=1<<17,
-    //MYOSD_L2=1<<18,    MYOSD_R2=1<<19,
     MYOSD_L2=1<<16,    MYOSD_R2=1<<17,
+    // MAMEalicious: stick clicks as first-class buttons (bits 18/19 were free;
+    // Java IController.L3_VALUE/R3_VALUE must match)
+    MYOSD_L3=1<<18,    MYOSD_R3=1<<19,
     MYOSD_EXIT=1<<20,   MYOSD_OPTION=1<<21,   MYOSD_HOME=1<<22,  MYOSD_MENU=1<<23,
+    // MAMEalicious: extra/back buttons (RP6 M1/M2 = BTN_C/BTN_Z; Java M1_VALUE/M2_VALUE)
+    MYOSD_M1=1<<24,    MYOSD_M2=1<<25,
 };
 
 enum MYOSD_AXIS {

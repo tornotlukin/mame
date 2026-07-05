@@ -169,8 +169,12 @@ void my_osd_interface::input_init()
 
         joystick->add_item("G", "", ITEM_ID_BUTTON7, get_button, BTN(joy_status[i], MYOSD_L2));
         joystick->add_item("H", "", ITEM_ID_BUTTON8, get_button, BTN(joy_status[i], MYOSD_R2));
-        //joystick->add_item("L3", "", ITEM_ID_BUTTON9, get_button, BTN(joy_status[i], MYOSD_L3));
-        //joystick->add_item("R3", "", ITEM_ID_BUTTON10,get_button, BTN(joy_status[i], MYOSD_R3));
+        // MAMEalicious: L3/R3 enabled (bits defined in myosd_core.h, fed by Java)
+        joystick->add_item("L3", "", ITEM_ID_BUTTON9, get_button, BTN(joy_status[i], MYOSD_L3));
+        joystick->add_item("R3", "", ITEM_ID_BUTTON10,get_button, BTN(joy_status[i], MYOSD_R3));
+        // MAMEalicious: extra/back buttons (RP6 M1/M2)
+        joystick->add_item("M1", "", ITEM_ID_BUTTON11, get_button, BTN(joy_status[i], MYOSD_M1));
+        joystick->add_item("M2", "", ITEM_ID_BUTTON12, get_button, BTN(joy_status[i], MYOSD_M2));
 
         joystick->add_item("Select", "", ITEM_ID_SELECT, get_button, BTN(joy_status[i], MYOSD_SELECT));
         joystick->add_item("Start",  "", ITEM_ID_START,  get_button, BTN(joy_status[i], MYOSD_START));
