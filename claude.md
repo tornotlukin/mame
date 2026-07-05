@@ -12,11 +12,13 @@ This fork hosts TWO unrelated work streams — keep their commits SEPARATE from 
    e.g. `cps2-4p` off upstream and commit its `src/mame/capcom/*` changes THERE, never on
    `llm-debugger`.
 
-Historical note: commits up to `45a6e5d9449` (2026-07-04) mixed both streams on
-`llm-debugger` (the three `jrpacman:` commits — sprite 256-set, wraparound/HUD remap,
-6.144MHz clock). If a clean pac-man-4ever branch is ever needed, cherry-pick exactly the
-`jrpacman:`-prefixed commits onto upstream; the game repo's `drivers/` folder also carries
-the full files + `pac4eva-mame.patch` as a branch-independent fallback.
+Historical note: RESOLVED 2026-07-05 — the branches were surgically split. All
+`jrpacman:` commits now live on **`jrpacman-4p`** (off `mame0288`); `llm-debugger` was
+rewritten to contain only debugger/docs commits (force-pushed). The game repo's
+`drivers/` folder also carries the full files + `pac4eva-mame.patch` as a
+branch-independent fallback. A planned **`rp6-android`** branch will merge
+`llm-debugger` + `jrpacman-4p` + the MAME4droid myosd OSD overlay as the composition
+branch the Android core builds from (see `workshop-mame-android.md`).
 
 Build note: `pac4eva.exe` (the exe the game project launches) is built from THIS tree via
 the game repo's `tools/build_mame.sh` — whichever branch is checked out is what it plays.
