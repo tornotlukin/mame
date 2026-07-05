@@ -294,13 +294,115 @@ Done on `rp6-android` branch:
      (soname set), no SDL scaffolding/copies.
    - `makefile` — new **`make android-myosd`** target (needs only ANDROID_NDK_HOME,
      no SDL_INSTALL_ROOT).
-4. **First build launched** (SUBTARGET=tiny for fast iteration):
-   `make android-myosd SUBTARGET=tiny REGENIE=1` with ANDROID_NDK_HOME=r28c.
-   **GENie generated 30/30 projects cleanly** → now compiling. Iterating on compile
-   errors is expected next.
+4. **✅ BUILD SUCCEEDED (attempt 7, 2026-07-05)** — `make android-myosd SUBTARGET=tiny`
+   produces **`libMAME4droid.so`** (117 MB, ELF arm64, Android 24+, NDK r28c, unstripped)
+   with ALL `myosd_droid_*` JNI entry points exported (verified with llvm-nm).
+   Error iteration log (each → fix → commit `d05525ae7d0`):
+   - expat entropy → `BASE_TARGETOS = "unix"` in myosd.lua
+   - machine.cpp/uiinput.cpp hunks misplaced at file scope by `patch` fuzz → relocated
+   - ui.cpp escapes mangled to literal NUL/newlines by tooling → repaired via chr() script
+   - bgfx draw module needs window.h → `removefiles` for myosd (no osdwindow layer)
+   - myosd-droid.cpp reached for the app repo via `../../../` relative include →
+     local copy of `com_seleuco_mame4droid_Emulator.h` in the OSD
+   - netplay.cpp unused var vs -Werror → `[[maybe_unused]]`
+   - link: unconditional `-lSDL2` + `-lqtdbg_<osd>` in main.lua → guarded off for myosd
 
 Note for Phase 2 (WiFi debug): myosd's osd class stubs `init_debugger()`/
 `wait_for_debugger()` as no-ops (myosd.h:74-76) — debugremote needs a small hook there.
+
+## APK #1 SHIPPED (2026-07-05)
+
+**`MAMEalicious-1.37-release.apk` (81 MB) built and pushed to the RP6's Downloads.**
+Contains: tiny-subtarget core (L3/R3 native items enabled) + JNI shim + rebranded app.
+
+Input changes included (the point of the fork):
+- Native: `MYOSD_L3=1<<18 / MYOSD_R3=1<<19` defined; L3/R3 input items registered
+  (input.cpp) → MAME sees 10 buttons + Select/Start per pad.
+- Java: `L3_VALUE/R3_VALUE`; input set 16→18; **stick clicks freed** (were eaten as
+  Start/Coin by defaults AND autodetect `mapTHUMBS`); factory defaults now
+  Coin←BUTTON_SELECT, Start←BUTTON_START, L3←THUMBL, R3←THUMBR; define-keys UI lists
+  the 2 new entries. M1/M2 (KEYCODE_BUTTON_C/Z) mappable via define-keys to any slot.
+- Right-stick analog (AXIS_Z/RZ→RIGHT_STICK_DATA) already existed in Current upstream —
+  verify on device whether #104 persists anyway.
+- App commits live on the `mamealicious` branch, **pushed to the fork
+  `github.com/tornotlukin/MAME4droid-Current`** (fork created 2026-07-05 via API).
+  Remote safety: `origin` = our fork; `upstream` = seleuco (fetch-only — push URL
+  set to an invalid sentinel so pushing upstream is impossible). Same neutering
+  applied to `mamedev/mame` upstream in the mame repo.
+
+Build notes: repo ships no gradle wrapper JAR → standalone Gradle 8.11.1 at
+`H:\_DEV\android\gradle-8.11.1`; JAVA_HOME = Android Studio JBR; release uses debug
+signing. APK: `android-MAME4droid/app/build/outputs/apk/release/`.
+
+**Tiny core = few test games (no jrpacman/CPS yet)** — UI + input testing only.
+Full-driver core build is the next step, then a full APK rebuild.
+
+**FIRST-RUN BUG FIXED (2026-07-05):** app exited right after ROM-folder selection.
+logcat: `dlopen failed: library "libc++_shared.so" not found` — the core links the NDK
+shared C++ runtime and the APK didn't bundle it (upstream main.lua's android block copies
+it; that step was stripped along with the SDL scaffolding). Fix: bundle
+`$NDK/.../sysroot/usr/lib/aarch64-linux-android/libc++_shared.so` into
+`jniLibs/arm64-v8a/` (now 3 .so in the APK). **Remember this for every core rebuild /
+CI: libc++_shared.so must ship in the APK.**
+
+## Directive: PURE MAME (2026-07-05)
+
+User wants MAMEalicious to be **"MAME as it is on Windows"** — the native MAME UI
+fullscreen, physical-controller input (RP6 built-ins + external pads), and NOTHING else
+from MAME4droid unless an Android build genuinely requires it.
+
+Step 1 (SHIPPED in current APK): pure-MAME **defaults** — touch overlay off in both
+orientations, portrait fullscreen on. App already boots straight into MAME's own UI.
+
+Step 2 (planned deep strip of the app layer):
+- **REMOVE**: touch controller/virtual pad code paths (TouchController, TouchStick,
+  ControlCustomizer, TiltSensor, TouchLightgun, TouchMouse), netplay UI/helper, scraper,
+  web help, overlay/effects options, wizard cruft, Android-menu surfaces beyond the
+  minimum.
+- **KEEP (required for Android)**: Activity + GLES surface (renders MAME), JNI shim +
+  Emulator bridge, native audio (OpenSL), **GameController/InputHandler physical-input
+  path** (18-slot mapping incl. L3/R3), **SAF storage** (Android scoped storage — the
+  only way to read ROM folders on Android 13), minimal settings (ROM path + define keys),
+  app lifecycle/permissions.
+- Approach: incremental removal with a working app at every step, on the `mamealicious`
+  branch of the (to-be-forked) MAME4droid-Current repo.
+
+Step 3 (config the Windows way): **manage settings via `mame.ini`** (standard MAME
+config), not the app's SharedPreferences.
+
+DECISIONS (2026-07-05):
+- **Strip depth = DEFAULTS-ONLY** — keep MAME4droid code, default everything to pure-MAME
+  (overlay off ✓, fullscreen on ✓). Reversible; options stay in Settings.
+- **Config = mame.ini ONLY (Windows-style)** — neutralize the app's option-override layer
+  so MAME's own mame.ini + TAB menu are authoritative.
+
+CONFIRMED BY INSPECTION:
+- Core uses `emulator_info::start_frontend(options, ...)` — the SAME desktop entry point
+  that reads `mame.ini` from the working dir. `myosd_droid_initMyOSD` does `chdir(path)`,
+  so mame.ini in that dir is already parsed natively. **mame.ini support already exists.**
+- SAF file layer (`safOpenFile/ReadDir/...` callbacks in myosd-droid.cpp) transparently
+  intercepts MAME's file ops → a rompath in mame.ini works, BUT Android 13 scoped storage
+  still requires a one-time SAF *permission grant* for that tree (permission, not setting).
+- What to neutralize: the app's `Emulator.setValue/setMyValue` pushes + any forced
+  `-options` in the launch args that currently override mame.ini. TODO: enumerate every
+  such call site in the Java layer and gate them off (or make them write mame.ini instead).
+
+## APK #2 — THE FULL ONE (2026-07-05)
+
+**`MAMEalicious-1.37-release.apk` (173 MB) with the FULL 42,880-driver core pushed to
+the RP6.** Core: 553 MB unstripped → 415 MB after `llvm-strip --strip-unneeded`
+(exports verified intact). Includes everything:
+- All drivers (jrpacman 4P mods, CPS1/2/3, X-Men 6P...) — our fork IS the core
+- L3/R3 + **M1/M2** native input items (named buttons in MAME's TAB menu)
+- **"Retroid Pocket" autodetect profile** — device was previously BANNED (unknown names
+  hit `banDev`); now fully mapped: M1/M2←BUTTON_C/Z, L3/R3←thumbs, Select=Coin,
+  Start=Start, Mode=Option, L2/R2 digital→G/H
+- Right-stick analog un-gated from isInGame (flows in frontend, desktop parity)
+- 20-slot input set; libc++_shared bundled; pure-MAME defaults
+- avgdvg.cpp reverted to stock (mangled vector-glow hack broke full build; re-apply later)
+
+Expectation note: MAME menus don't navigate with M1/M2/right-stick (same as desktop);
+verify via TAB → Input Settings → assign — they register by NAME (M1, M2, L3, R3).
 
 ## Proposed Plan (draft)
 
