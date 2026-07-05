@@ -26,12 +26,23 @@ end
 
 	configuration { "android*" }
 		targetprefix "lib"
-		targetname "main"
+		if _OPTIONS["osd"]=="myosd" then
+			targetname "MAME4droid"
+		else
+			targetname "main"
+		end
 		targetextension ".so"
-		linkoptions {
-			"-shared",
-			"-Wl,-soname,libmain.so"
-		}
+		if _OPTIONS["osd"]=="myosd" then
+			linkoptions {
+				"-shared",
+				"-Wl,-soname,libMAME4droid.so"
+			}
+		else
+			linkoptions {
+				"-shared",
+				"-Wl,-soname,libmain.so"
+			}
+		end
 		links {
 			"EGL",
 			"GLESv1_CM",
@@ -88,7 +99,14 @@ end
 
 	configuration { }
 
-	if _OPTIONS["targetos"]=="android" then
+	if _OPTIONS["targetos"]=="android" and _OPTIONS["osd"]=="myosd" then
+		-- myosd: pure shared library, no SDL scaffolding; entry points are
+		-- the exported myosd_droid_* symbols dlopen'd by the app's JNI shim.
+		targetsuffix ""
+		if _OPTIONS["SEPARATE_BIN"]~="1" then
+			targetdir(MAME_DIR)
+		end
+	elseif _OPTIONS["targetos"]=="android" then
 		files {
 			MAME_DIR .. "src/osd/sdl/android_main.cpp",
 		}

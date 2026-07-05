@@ -1200,6 +1200,36 @@ android-arm64: android-ndk generate $(PROJECTDIR_SDL)/$(MAKETYPE)-android-arm64/
 	$(SILENT) $(MAKE) $(MAKEPARAMS) -C $(PROJECTDIR_SDL)/$(MAKETYPE)-android-arm64 config=$(CONFIG)
 
 #-------------------------------------------------
+# android-myosd (MAME4droid core: libMAME4droid.so, arm64)
+# Like android-arm64 but uses the myosd OSD and needs no SDL.
+#-------------------------------------------------
+
+PROJECTDIR_MYOSD := $(BUILDDIR)/projects/myosd/$(FULLTARGET)
+
+.PHONY: android-ndk-myosd
+android-ndk-myosd:
+ifndef ANDROID_NDK_HOME
+	$(error ANDROID_NDK_HOME is not set)
+endif
+ifeq ($(OS),windows)
+	$(eval CLANG_VERSION := $(shell $(ANDROID_NDK_HOME)/toolchains/llvm/prebuilt/windows-x86_64/bin/clang -dumpversion 2> /dev/null))
+else ifeq ($(OS),linux)
+	$(eval CLANG_VERSION := $(shell $(ANDROID_NDK_HOME)/toolchains/llvm/prebuilt/linux-x86_64/bin/clang -dumpversion 2> /dev/null))
+else ifeq ($(OS),macosx)
+	$(eval CLANG_VERSION := $(shell $(ANDROID_NDK_HOME)/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang -dumpversion 2> /dev/null))
+else
+	$(error Unsupported Android build platform)
+endif
+
+$(PROJECTDIR_MYOSD)/$(MAKETYPE)-android-arm64/Makefile: makefile $(SCRIPTS) $(GENIE)
+	$(SILENT) $(GENIE) $(PARAMS) --gcc=android-arm64 --gcc_version=$(CLANG_VERSION) --osd=myosd --targetos=android --PLATFORM=arm64 --NOASM=1 $(MAKETYPE)
+
+.PHONY: android-myosd
+android-myosd: android-ndk-myosd generate $(PROJECTDIR_MYOSD)/$(MAKETYPE)-android-arm64/Makefile
+	$(SILENT) $(MAKE) $(MAKEPARAMS) -C $(PROJECTDIR_MYOSD)/$(MAKETYPE)-android-arm64 config=$(CONFIG) precompile
+	$(SILENT) $(MAKE) $(MAKEPARAMS) -C $(PROJECTDIR_MYOSD)/$(MAKETYPE)-android-arm64 config=$(CONFIG)
+
+#-------------------------------------------------
 # android-x86
 #-------------------------------------------------
 
