@@ -156,6 +156,7 @@ void jrpacman_state::main_map(address_map &map)
 	// pac-man-4ever: extra simultaneous-player inputs (not on stock hardware)
 	map(0x5100, 0x5100).portr("P3");
 	map(0x5101, 0x5101).portr("P4");
+	map(0x6000, 0x7fff).rom();     // pac-man-4ever: expansion ROM 2 (engine modules; plaintext - decrypt table is zero here)
 	map(0x8000, 0xdfff).rom();
 	map(0xe000, 0xffff).rom();     // pac-man-4ever: expansion ROM (screens/data; plaintext - decrypt table is zero here)
 }
@@ -362,6 +363,7 @@ ROM_START( jrpacman )
 	ROM_LOAD( "jr.pac-man_8h_11-9-83.8h",    0x8000, 0x2000, CRC(35f1fc6e) SHA1(b84b34560b9aae18b24274712b052283faa01730) )
 	ROM_LOAD( "jr.pac-man_8j_11-9-83.8j",    0xa000, 0x2000, CRC(9737099e) SHA1(07d912a61824323c8fc1b8bd0da89172d4f70b91) )
 	ROM_LOAD( "jr.pac-man_8k_11-9-83.8k",    0xc000, 0x2000, CRC(5252dd97) SHA1(18bd4d5381656120e4242811006c20776774de4d) )
+	ROM_LOAD_OPTIONAL( "pac4eva.6x",         0x6000, 0x2000, CRC(d8f49994) SHA1(0631457264ff7f8d5fb1edc2c0211992a67c73e6) ) // pac-man-4ever: expansion ROM 2 (engine modules; plaintext)
 	ROM_LOAD_OPTIONAL( "pac4eva.8x",         0xe000, 0x2000, CRC(d8f49994) SHA1(0631457264ff7f8d5fb1edc2c0211992a67c73e6) ) // pac-man-4ever: expansion ROM (plaintext; decrypt table is zero over 0xe000+)
 
 	ROM_REGION( 0x6000, "gfx1", 0 )   // pac-man-4ever: L1 layout = tiles 0x2000 + sprites 0x4000 (256). Upper 128 sprites blank in the stock set, painted via the gfx import tool in modroms.
