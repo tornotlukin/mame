@@ -1330,11 +1330,12 @@ uint16_t cps2_state::cps2_4p_in0_r()
 {
 	address_space &sp = m_maincpu->space(AS_PROGRAM);
 	const uint16_t p1p2 = ioport("IN0")->read();      // stock: P1 low byte, P2 high byte
-	// MATCH GATE: FF0000 is the top-level "match in progress" flag (1 only during a live match,
-	// 0 in select/menu/attract; verified across 10 match snapshots vs select). The select screen
-	// pre-sets FF4444/FF4C44=1, so the partner flag alone can't tell us we're fighting -- without
-	// this gate P3/P4 would drive the select cursors. Off-match -> stock P1/P2.
-	if (!sp.read_byte(0xff0000)) return p1p2;
+	// MATCH GATE: the character-select screen pre-sets FF4444/FF4C44=1 AND has FF0000=1, so neither
+	// distinguishes select from a fight. FF4000 (team1 char1's struct base byte) is 0 in
+	// select/menu/attract and 1 during any live match -- verified 0 in an interactive-select
+	// snapshot and 1 across 11 match snapshots incl. KO states. Gate routing on it so the select
+	// cursors stay stock P1/P2 (this is the fix for "P3 controls the select screen").
+	if (!sp.read_byte(0xff4000)) return p1p2;
 	const uint16_t p3p4 = ioport("IN0_P34")->read();  // P3 low byte, P4 high byte
 	uint16_t r = p1p2;
 	if (sp.read_byte(0xff4444)) r = (r & 0xff00) | (p3p4 & 0x00ff);  // team1 char2 active -> P3
@@ -1346,7 +1347,7 @@ uint16_t cps2_state::cps2_4p_in1_r()
 {
 	address_space &sp = m_maincpu->space(AS_PROGRAM);
 	const uint16_t p1p2 = ioport("IN1")->read();
-	if (!sp.read_byte(0xff0000)) return p1p2;         // match gate: stock P1/P2 off-match
+	if (!sp.read_byte(0xff4000)) return p1p2;         // match gate (FF4000): stock P1/P2 off-match
 	const uint16_t p3p4 = ioport("IN1_P34")->read();
 	uint16_t r = p1p2;
 	if (sp.read_byte(0xff4444)) r = (r & 0xfff8) | (p3p4 & 0x0007);  // team1 char2 active -> P3
@@ -1361,7 +1362,7 @@ uint16_t cps2_state::cps2_4p_in2_r()
 	// so P4 gets a full 6 buttons (and can complete FP+FK to tag out) when driving team2's 2nd char.
 	address_space &sp = m_maincpu->space(AS_PROGRAM);
 	uint16_t in2 = ioport("IN2")->read();          // stock: EEPROM, coins, starts, P2 button 6
-	if (sp.read_byte(0xff0000) && sp.read_byte(0xff4c44))  // in a match AND team2 char2 active -> P4 btn6
+	if (sp.read_byte(0xff4000) && sp.read_byte(0xff4c44))  // in a match (FF4000) AND team2 char2 active -> P4 btn6
 	{
 		const uint16_t p4b6 = ioport("IN1_P34")->read() & 0x0040;  // active-low: 0 = pressed
 		in2 = (in2 & 0xbfff) | (p4b6 ? 0x4000 : 0x0000);
