@@ -720,6 +720,7 @@ private:
 	void cps2_4p_map(address_map &map) ATTR_COLD;
 	uint16_t cps2_4p_in0_r();
 	uint16_t cps2_4p_in1_r();
+	uint16_t cps2_4p_in2_r();
 
 	void init_cps2_video() ATTR_COLD;
 	void init_cps2crypt() ATTR_COLD;
@@ -1343,11 +1344,27 @@ uint16_t cps2_state::cps2_4p_in1_r()
 	return r;
 }
 
+uint16_t cps2_state::cps2_4p_in2_r()
+{
+	// IN2 carries P2's button 6 (0x4000, the FK half of the tag combo) alongside EEPROM/coins/
+	// starts/service. Team2's other inputs are muxed in IN0/IN1; only button 6 needs handling here,
+	// so P4 gets a full 6 buttons (and can complete FP+FK to tag out) when driving team2's 2nd char.
+	address_space &sp = m_maincpu->space(AS_PROGRAM);
+	uint16_t in2 = ioport("IN2")->read();          // stock: EEPROM, coins, starts, P2 button 6
+	if (!sp.read_byte(0xff4844))                    // team2 point=char2 -> route P4 button 6
+	{
+		const uint16_t p4b6 = ioport("IN1_P34")->read() & 0x0040;  // active-low: 0 = pressed
+		in2 = (in2 & 0xbfff) | (p4b6 ? 0x4000 : 0x0000);
+	}
+	return in2;
+}
+
 void cps2_state::cps2_4p_map(address_map &map)
 {
 	cps2_map(map);
 	map(0x804000, 0x804001).r(FUNC(cps2_state::cps2_4p_in0_r));  // IN0 mux
 	map(0x804010, 0x804011).r(FUNC(cps2_state::cps2_4p_in1_r));  // IN1 mux
+	map(0x804020, 0x804021).r(FUNC(cps2_state::cps2_4p_in2_r));  // IN2 mux (P2/P4 button 6)
 }
 
 void cps2_state::cps2_comm_map(address_map &map)
