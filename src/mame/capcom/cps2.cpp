@@ -1322,21 +1322,25 @@ void cps2_state::cps2_map(address_map &map)
 }
 
 // --- 4-player 2v2 tag mod (xmvsf) ---
-// Teams P1+P3 vs P2+P4. Each team shows one "point" character at a time; the active-character
-// flag lives in work RAM at struct+0x44 (FF4044 = team1 char1, FF4844 = team2 char1). When a
-// team's point char is char1 the flag reads 1, so the game's P1/P2 input belongs to that human
-// (P1 / P2); when it's char2 the flag reads 0, so we route the partner's pad (P3 / P4) into the
-// same P1/P2 bit-field. The game code is unchanged: it still reads IN0/IN1 and simply sees the
-// correct human for whoever is currently on point. (IN0: P1=low byte, P2=high byte. IN1: P1
-// buttons 4-6 = 0x0007, P2 buttons 4-5 = 0x0030; P2 button 6 lives in IN2 and is handled later.)
+// Teams P1+P3 vs P2+P4. Each team shows one "point" character at a time. The active-character
+// flag lives in work RAM at struct+0x44: FF4044=team1 char1, FF4444=team1 char2, FF4844=team2
+// char1, FF4C44=team2 char2 (base FF4000, stride 0x400). In a match exactly one flag per team is
+// 1. We route the PARTNER's pad (P3 / P4) into the game's P1 / P2 bit-field only when the
+// partner's character (char2) is EXPLICITLY the point fighter (FF4444 / FF4C44 == 1); otherwise
+// the stock P1 / P2 pad is used. Gating on the partner's own flag (not "char1 not active") means
+// that on the character-select screen and in menus -- where no fighter is active and all flags
+// read 0 -- input stays stock (P1/P2), so P1/P2 drive the select cursors. The game code is
+// unchanged: it reads IN0/IN1/IN2 and sees the correct human for whoever is on point.
+// (IN0: P1=low byte, P2=high byte. IN1: P1 buttons 4-6 = 0x0007, P2 buttons 4-5 = 0x0030;
+// P2 button 6 lives in IN2, handled in cps2_4p_in2_r.)
 uint16_t cps2_state::cps2_4p_in0_r()
 {
 	address_space &sp = m_maincpu->space(AS_PROGRAM);
 	const uint16_t p1p2 = ioport("IN0")->read();      // stock: P1 low byte, P2 high byte
 	const uint16_t p3p4 = ioport("IN0_P34")->read();  // P3 low byte, P4 high byte
 	uint16_t r = p1p2;
-	if (!sp.read_byte(0xff4044)) r = (r & 0xff00) | (p3p4 & 0x00ff);  // team1 point=char2 -> P3
-	if (!sp.read_byte(0xff4844)) r = (r & 0x00ff) | (p3p4 & 0xff00);  // team2 point=char2 -> P4
+	if (sp.read_byte(0xff4444)) r = (r & 0xff00) | (p3p4 & 0x00ff);  // team1 char2 active -> P3
+	if (sp.read_byte(0xff4c44)) r = (r & 0x00ff) | (p3p4 & 0xff00);  // team2 char2 active -> P4
 	return r;
 }
 
@@ -1346,8 +1350,8 @@ uint16_t cps2_state::cps2_4p_in1_r()
 	const uint16_t p1p2 = ioport("IN1")->read();
 	const uint16_t p3p4 = ioport("IN1_P34")->read();
 	uint16_t r = p1p2;
-	if (!sp.read_byte(0xff4044)) r = (r & 0xfff8) | (p3p4 & 0x0007);  // team1 P1 btn4-6 -> P3
-	if (!sp.read_byte(0xff4844)) r = (r & 0xffcf) | (p3p4 & 0x0030);  // team2 P2 btn4-5 -> P4
+	if (sp.read_byte(0xff4444)) r = (r & 0xfff8) | (p3p4 & 0x0007);  // team1 char2 active -> P3
+	if (sp.read_byte(0xff4c44)) r = (r & 0xffcf) | (p3p4 & 0x0030);  // team2 char2 active -> P4
 	return r;
 }
 
@@ -1358,7 +1362,7 @@ uint16_t cps2_state::cps2_4p_in2_r()
 	// so P4 gets a full 6 buttons (and can complete FP+FK to tag out) when driving team2's 2nd char.
 	address_space &sp = m_maincpu->space(AS_PROGRAM);
 	uint16_t in2 = ioport("IN2")->read();          // stock: EEPROM, coins, starts, P2 button 6
-	if (!sp.read_byte(0xff4844))                    // team2 point=char2 -> route P4 button 6
+	if (sp.read_byte(0xff4c44))                     // team2 char2 active -> route P4 button 6
 	{
 		const uint16_t p4b6 = ioport("IN1_P34")->read() & 0x0040;  // active-low: 0 = pressed
 		in2 = (in2 & 0xbfff) | (p4b6 ? 0x4000 : 0x0000);
