@@ -1633,6 +1633,39 @@ static INPUT_PORTS_START( cps2_2p6b )
 	PORT_BIT( 0x4000, IP_ACTIVE_LOW, IPT_BUTTON6 ) PORT_PLAYER(2)
 INPUT_PORTS_END
 
+// 4 players, 6 buttons — 2v2 tag mod. Teams P1+P3 vs P2+P4; P3/P4 drive each team's
+// SECOND (tagged-in) character. IN0_P34/IN1_P34 are NOT memory-mapped: the input mux
+// (cps2_4p_in0_r/in1_r) reads them and substitutes P3/P4 for P1/P2 based on each team's
+// active-character flag (work RAM struct+0x44). Same bit layout as IN0/IN1's P1/P2 fields:
+// P3 in the low byte, P4 in the high byte.
+static INPUT_PORTS_START( cps2_4p6b )
+	PORT_INCLUDE(cps2_2p6b)
+
+	PORT_START("IN0_P34")
+	PORT_BIT( 0x0001, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT ) PORT_8WAY PORT_PLAYER(3)
+	PORT_BIT( 0x0002, IP_ACTIVE_LOW, IPT_JOYSTICK_LEFT ) PORT_8WAY PORT_PLAYER(3)
+	PORT_BIT( 0x0004, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_8WAY PORT_PLAYER(3)
+	PORT_BIT( 0x0008, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_8WAY PORT_PLAYER(3)
+	PORT_BIT( 0x0010, IP_ACTIVE_LOW, IPT_BUTTON1 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0020, IP_ACTIVE_LOW, IPT_BUTTON2 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0040, IP_ACTIVE_LOW, IPT_BUTTON3 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0100, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT ) PORT_8WAY PORT_PLAYER(4)
+	PORT_BIT( 0x0200, IP_ACTIVE_LOW, IPT_JOYSTICK_LEFT ) PORT_8WAY PORT_PLAYER(4)
+	PORT_BIT( 0x0400, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_8WAY PORT_PLAYER(4)
+	PORT_BIT( 0x0800, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_8WAY PORT_PLAYER(4)
+	PORT_BIT( 0x1000, IP_ACTIVE_LOW, IPT_BUTTON1 ) PORT_PLAYER(4)
+	PORT_BIT( 0x2000, IP_ACTIVE_LOW, IPT_BUTTON2 ) PORT_PLAYER(4)
+	PORT_BIT( 0x4000, IP_ACTIVE_LOW, IPT_BUTTON3 ) PORT_PLAYER(4)
+
+	PORT_START("IN1_P34")
+	PORT_BIT( 0x0001, IP_ACTIVE_LOW, IPT_BUTTON4 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0002, IP_ACTIVE_LOW, IPT_BUTTON5 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0004, IP_ACTIVE_LOW, IPT_BUTTON6 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0010, IP_ACTIVE_LOW, IPT_BUTTON4 ) PORT_PLAYER(4)
+	PORT_BIT( 0x0020, IP_ACTIVE_LOW, IPT_BUTTON5 ) PORT_PLAYER(4)
+	PORT_BIT( 0x0040, IP_ACTIVE_LOW, IPT_BUTTON6 ) PORT_PLAYER(4)
+INPUT_PORTS_END
+
 // 2 players, 6 buttons, and 1 ticket dispenser (2 rows of 3 buttons)
 static INPUT_PORTS_START( cps2_2p6bt )
 	PORT_INCLUDE(cps2_2p6b)
@@ -12731,7 +12764,7 @@ GAME( 1996, megaman2a,  megaman2, cps2,     cps2_2p3b, cps2_state, init_cps2,   
 GAME( 1996, rockman2j,  megaman2, cps2,     cps2_2p3b, cps2_state, init_cps2,     ROT0,   "Capcom", "Rockman 2: The Power Fighters (Japan 960708)",                                  MACHINE_SUPPORTS_SAVE )
 GAME( 1996, megaman2h,  megaman2, cps2,     cps2_2p3b, cps2_state, init_cps2,     ROT0,   "Capcom", "Mega Man 2: The Power Fighters (Hispanic 960712)",                              MACHINE_SUPPORTS_SAVE )
 GAME( 1996, qndream,    0,        cps2,     qndream,   cps2_state, init_cps2,     ROT0,   "Capcom", "Quiz Nanairo Dreams: Nijiirochou no Kiseki (Japan 960826)",                     MACHINE_SUPPORTS_SAVE )
-GAME( 1996, xmvsf,      0,        cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (Europe 961004)",                                      MACHINE_SUPPORTS_SAVE )
+GAME( 1996, xmvsf,      0,        cps2,     cps2_4p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (Europe 961004)",                                      MACHINE_SUPPORTS_SAVE )
 GAME( 1996, xmvsfr1,    xmvsf,    cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (Europe 960910)",                                      MACHINE_SUPPORTS_SAVE )
 GAME( 1996, xmvsfu,     xmvsf,    cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (USA 961023)",                                         MACHINE_SUPPORTS_SAVE )
 GAME( 1996, xmvsfur1,   xmvsf,    cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (USA 961004)",                                         MACHINE_SUPPORTS_SAVE )
