@@ -662,6 +662,7 @@ public:
 
 	void cps2(machine_config &config) ATTR_COLD;
 	void cps2comm(machine_config &config) ATTR_COLD;
+	void cps2_4p(machine_config &config) ATTR_COLD;   // 4-player 2v2 tag mod (xmvsf)
 	void gigaman2(machine_config &config) ATTR_COLD;
 	void dead_cps2(machine_config &config) ATTR_COLD;
 	void dead_cps2comm(machine_config &config) ATTR_COLD;
@@ -714,6 +715,11 @@ private:
 	void dead_cps2_comm_map(address_map &map) ATTR_COLD;
 	void dead_cps2_map(address_map &map) ATTR_COLD;
 	void decrypted_opcodes_map(address_map &map) ATTR_COLD;
+
+	// 4-player 2v2 tag mod (xmvsf): input mux substitutes P3/P4 for P1/P2 by active-char flag
+	void cps2_4p_map(address_map &map) ATTR_COLD;
+	uint16_t cps2_4p_in0_r();
+	uint16_t cps2_4p_in1_r();
 
 	void init_cps2_video() ATTR_COLD;
 	void init_cps2crypt() ATTR_COLD;
@@ -1307,6 +1313,43 @@ void cps2_state::cps2_map(address_map &map)
 	map(0xff0000, 0xffffff).ram();                                                                                                    // RAM
 }
 
+// --- 4-player 2v2 tag mod (xmvsf) ---
+// Teams P1+P3 vs P2+P4. Each team shows one "point" character at a time; the active-character
+// flag lives in work RAM at struct+0x44 (FF4044 = team1 char1, FF4844 = team2 char1). When a
+// team's point char is char1 the flag reads 1, so the game's P1/P2 input belongs to that human
+// (P1 / P2); when it's char2 the flag reads 0, so we route the partner's pad (P3 / P4) into the
+// same P1/P2 bit-field. The game code is unchanged: it still reads IN0/IN1 and simply sees the
+// correct human for whoever is currently on point. (IN0: P1=low byte, P2=high byte. IN1: P1
+// buttons 4-6 = 0x0007, P2 buttons 4-5 = 0x0030; P2 button 6 lives in IN2 and is handled later.)
+uint16_t cps2_state::cps2_4p_in0_r()
+{
+	address_space &sp = m_maincpu->space(AS_PROGRAM);
+	const uint16_t p1p2 = ioport("IN0")->read();      // stock: P1 low byte, P2 high byte
+	const uint16_t p3p4 = ioport("IN0_P34")->read();  // P3 low byte, P4 high byte
+	uint16_t r = p1p2;
+	if (!sp.read_byte(0xff4044)) r = (r & 0xff00) | (p3p4 & 0x00ff);  // team1 point=char2 -> P3
+	if (!sp.read_byte(0xff4844)) r = (r & 0x00ff) | (p3p4 & 0xff00);  // team2 point=char2 -> P4
+	return r;
+}
+
+uint16_t cps2_state::cps2_4p_in1_r()
+{
+	address_space &sp = m_maincpu->space(AS_PROGRAM);
+	const uint16_t p1p2 = ioport("IN1")->read();
+	const uint16_t p3p4 = ioport("IN1_P34")->read();
+	uint16_t r = p1p2;
+	if (!sp.read_byte(0xff4044)) r = (r & 0xfff8) | (p3p4 & 0x0007);  // team1 P1 btn4-6 -> P3
+	if (!sp.read_byte(0xff4844)) r = (r & 0xffcf) | (p3p4 & 0x0030);  // team2 P2 btn4-5 -> P4
+	return r;
+}
+
+void cps2_state::cps2_4p_map(address_map &map)
+{
+	cps2_map(map);
+	map(0x804000, 0x804001).r(FUNC(cps2_state::cps2_4p_in0_r));  // IN0 mux
+	map(0x804010, 0x804011).r(FUNC(cps2_state::cps2_4p_in1_r));  // IN1 mux
+}
+
 void cps2_state::cps2_comm_map(address_map &map)
 {
 	cps2_map(map);
@@ -1803,6 +1846,13 @@ void cps2_state::cps2(machine_config &config)
 	QSOUND(config, m_qsound);
 	m_qsound->add_route(0, "speaker", 1.0, 0);
 	m_qsound->add_route(1, "speaker", 1.0, 1);
+}
+
+void cps2_state::cps2_4p(machine_config &config)
+{
+	cps2(config);
+	// Swap in the input-mux program map (overrides the IN0/IN1 reads at 0x804000/0x804010).
+	m_maincpu->set_addrmap(AS_PROGRAM, &cps2_state::cps2_4p_map);
 }
 
 void cps2_state::cps2comm(machine_config &config)
@@ -12757,7 +12807,7 @@ GAME( 1996, megaman2a,  megaman2, cps2,     cps2_2p3b, cps2_state, init_cps2,   
 GAME( 1996, rockman2j,  megaman2, cps2,     cps2_2p3b, cps2_state, init_cps2,     ROT0,   "Capcom", "Rockman 2: The Power Fighters (Japan 960708)",                                  MACHINE_SUPPORTS_SAVE )
 GAME( 1996, megaman2h,  megaman2, cps2,     cps2_2p3b, cps2_state, init_cps2,     ROT0,   "Capcom", "Mega Man 2: The Power Fighters (Hispanic 960712)",                              MACHINE_SUPPORTS_SAVE )
 GAME( 1996, qndream,    0,        cps2,     qndream,   cps2_state, init_cps2,     ROT0,   "Capcom", "Quiz Nanairo Dreams: Nijiirochou no Kiseki (Japan 960826)",                     MACHINE_SUPPORTS_SAVE )
-GAME( 1996, xmvsf,      0,        cps2,     cps2_4p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (Europe 961004)",                                      MACHINE_SUPPORTS_SAVE )
+GAME( 1996, xmvsf,      0,        cps2_4p,  cps2_4p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (Europe 961004)",                                      MACHINE_SUPPORTS_SAVE )
 GAME( 1996, xmvsfr1,    xmvsf,    cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (Europe 960910)",                                      MACHINE_SUPPORTS_SAVE )
 GAME( 1996, xmvsfu,     xmvsf,    cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (USA 961023)",                                         MACHINE_SUPPORTS_SAVE )
 GAME( 1996, xmvsfur1,   xmvsf,    cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (USA 961004)",                                         MACHINE_SUPPORTS_SAVE )
