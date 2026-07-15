@@ -1339,12 +1339,21 @@ void cps2_state::cps2_map(address_map &map)
 // ---------------------------------------------------------------------------------------------
 // 4-player 2v2 tag mod (VS trilogy: xmvsf, mshvsf, mvsc). Teams are P1+P3 vs P2+P4.
 //
-// HOW THE GAME TAGS (xmvsf, verified): the tag routine exchanges character fields between a
-// fixed ACTIVE slot and a fixed BENCH slot -- FF4000<->FF4800 for team 1, FF4400<->FF4C00 for
-// team 2. So the engine moves the CHARACTER, not the input routing: P1 always drives whatever
-// fighter currently occupies FF4000, and P2 always drives FF4400. Field +0x220 of a team's
-// active struct holds that team's on-point index (0 = the starting character, non-zero = the
-// partner); it is cleared at round init and swapped on every tag.
+// HOW THESE GAMES TAG: the engine moves the CHARACTER, not the input routing. Each side has one
+// slot the game always drives, and tagging swaps character state into it -- so P1 always drives
+// team 1's active fighter whoever that currently is, and P2 always drives team 2's. That is what
+// makes a port-level mux viable at all: there is no per-character input pointer to chase, only
+// one byte per team saying whether the partner is currently the one in.
+//
+// THE THREE TITLES DO NOT SHARE A LAYOUT -- only the engine skeleton. Do not port addresses
+// between them without first confirming the structure is shared:
+//   xmvsf : four fixed slots. Tag routine @0x010250 exchanges fields FF4000<->FF4800 (team 1)
+//           and FF4400<->FF4C00 (team 2). On-point index = +0x220 of the active slot, reads 0/1.
+//   mshvsf: an indexed ARRAY at FF3800, stride 0x400, slot index read from +0x94
+//           (move.b $94(aN),d0; ror.w #6,d0; lea base -> base + idx*0x400). xmvsf's +0x220 field
+//           does NOT exist here and its tag routine has no counterpart. Gate reads 3, not 1.
+//   mvsc  : same indexed-array scheme as mshvsf, base FF3000. Because the indexing CODE was
+//           confirmed identical first, mshvsf's gate offsets ported to it directly.
 //
 // THE MOD: when a team's partner is on point, substitute that team's second player's pad for
 // the first player's bits in the stock port reads. The benched player's pad going dead is the
@@ -1355,10 +1364,19 @@ void cps2_state::cps2_map(address_map &map)
 // pads can be read directly -- from a Lua probe or the debugger -- to tell "P3 isn't wired up"
 // apart from "the gate never fired", which is otherwise very hard to distinguish.
 //
-// HISTORY (do not regress): an earlier revision gated on FF4444/FF4C44, believing the fighter
-// structs were team-major. They are not -- that map paired bytes from two DIFFERENT teams, so
-// the "flag" looked like it churned randomly and the mux flickered. The approach was sound; the
-// address was wrong.
+// WHY NOT A ROM PATCH: a driver change is not a preference, it is forced. CPS2 has three input
+// registers and a 6-button game already spends them (IN0 = P1+P2 sticks + buttons 1-3, IN1 =
+// their buttons 4-6, and P2's button 6 does not even fit -- it lives in IN2 at 0x4000).
+// 4 players x (4 dirs + 6 buttons) = 40 bits; IN0+IN1 provide 32. Players 3 and 4 cannot exist
+// on this board, so no program patch can add them -- only the driver can invent the inputs.
+// Given that, the routing may as well live here too, which keeps the games' ROMs stock.
+// NOTE: this mod therefore runs in MAME only; it cannot work on real CPS2 hardware.
+//
+// HISTORY (do not regress): an earlier revision gated on FF4444/FF4C44, believing xmvsf's
+// fighter structs were team-major. They are not -- that map paired bytes from two DIFFERENT
+// teams, so the "flag" appeared to churn at random and the mux flickered. The approach was
+// sound; one address was wrong. Every gate here is verified live by a self-driving test
+// (14 assertions per game: gate on/off, partner drives, benched pad dead, both directions).
 bool cps2_state::vs4p_partner_on_point(int team)
 {
 	if (!m_vs4p_gate[team])
