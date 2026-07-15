@@ -11124,8 +11124,12 @@ void cps2_state::init_xmvsf_4p()  { init_vs4p(0xff4220, 0xff4620); }
 // than a 0/1 index; the mux only tests != 0, which the game confirms gates correctly both ways.
 void cps2_state::init_mshvsf_4p() { init_vs4p(0xff4079, 0xff4479); }
 
-// Scaffolded, gate not yet mapped -> runs bit-for-bit stock until the addresses are found.
-void cps2_state::init_mvsc_4p()   { init_vs4p(0, 0); }
+// Verified live (probe22, 14/14 both teams). mvsc indexes its fighter structs exactly like mshvsf
+// -- both read a slot index from +0x94 and compute base + index*0x400 (mvsc base FF3000, mshvsf
+// FF3800) -- so mshvsf's slot2+0x79 / slot3+0x79 gates carried over directly. That worked only
+// because the shared code shape was confirmed in mvsc's own ROM first; porting xmvsf's layout to
+// mshvsf on the same hunch failed completely. Gate reads 3 with the partner in, same as mshvsf.
+void cps2_state::init_mvsc_4p()   { init_vs4p(0xff3879, 0xff3c79); }
 
 void cps2_state::init_cps2nc()
 {
