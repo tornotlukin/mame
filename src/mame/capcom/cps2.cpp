@@ -662,7 +662,7 @@ public:
 
 	void cps2(machine_config &config) ATTR_COLD;
 	void cps2comm(machine_config &config) ATTR_COLD;
-	void cps2_4p(machine_config &config) ATTR_COLD;   // 4-player 2v2 tag mod (xmvsf)
+	void cps2_4p(machine_config &config) ATTR_COLD;   // 4-player 2v2 tag mod (VS trilogy)
 	void gigaman2(machine_config &config) ATTR_COLD;
 	void dead_cps2(machine_config &config) ATTR_COLD;
 	void dead_cps2comm(machine_config &config) ATTR_COLD;
@@ -673,6 +673,11 @@ public:
 	void init_pzloop2() ATTR_COLD;
 	void init_singbrd() ATTR_COLD;
 	void init_ecofghtr() ATTR_COLD;
+	// 4-player 2v2 tag mod: one init per set, supplying that set's on-point gate addresses.
+	void init_vs4p(uint32_t gate1, uint32_t gate2) ATTR_COLD;
+	void init_xmvsf_4p() ATTR_COLD;
+	void init_mshvsf_4p() ATTR_COLD;
+	void init_mvsc_4p() ATTR_COLD;
 
 protected:
 	virtual void machine_start() override ATTR_COLD;
@@ -716,11 +721,15 @@ private:
 	void dead_cps2_map(address_map &map) ATTR_COLD;
 	void decrypted_opcodes_map(address_map &map) ATTR_COLD;
 
-	// 4-player 2v2 tag mod (xmvsf): input mux substitutes P3/P4 for P1/P2 by active-char flag
+	// 4-player 2v2 tag mod (VS trilogy). See the block comment above cps2_4p_in0_r.
 	void cps2_4p_map(address_map &map) ATTR_COLD;
+	bool vs4p_partner_on_point(int team);
 	uint16_t cps2_4p_in0_r();
 	uint16_t cps2_4p_in1_r();
 	uint16_t cps2_4p_in2_r();
+	// Work-RAM address of each team's on-point index. 0 = not yet mapped for this set, which
+	// leaves the mux inert and the game bit-for-bit stock.
+	uint32_t m_vs4p_gate[2] = { 0, 0 };
 
 	void init_cps2_video() ATTR_COLD;
 	void init_cps2crypt() ATTR_COLD;
@@ -1315,67 +1324,86 @@ void cps2_state::cps2_map(address_map &map)
 }
 
 // --- 4-player 2v2 tag mod (xmvsf) ---
-// Teams P1+P3 vs P2+P4. Each team shows one "point" character at a time. The active-character
-// flag lives in work RAM at struct+0x44: FF4044=team1 char1, FF4444=team1 char2, FF4844=team2
-// char1, FF4C44=team2 char2 (base FF4000, stride 0x400). In a match exactly one flag per team is
-// 1. We route the PARTNER's pad (P3 / P4) into the game's P1 / P2 bit-field only when the
-// partner's character (char2) is EXPLICITLY the point fighter (FF4444 / FF4C44 == 1); otherwise
-// the stock P1 / P2 pad is used. Gating on the partner's own flag (not "char1 not active") means
-// that on the character-select screen and in menus -- where no fighter is active and all flags
-// read 0 -- input stays stock (P1/P2), so P1/P2 drive the select cursors. The game code is
-// unchanged: it reads IN0/IN1/IN2 and sees the correct human for whoever is on point.
-// (IN0: P1=low byte, P2=high byte. IN1: P1 buttons 4-6 = 0x0007, P2 buttons 4-5 = 0x0030;
-// P2 button 6 lives in IN2, handled in cps2_4p_in2_r.)
+// Teams P1+P3 vs P2+P4. Each team shows one "point" character at a time. Ownership follows the
+// CHARACTER, not the slot: P1/P2 own the STARTING (first-selected) character; P3/P4 own the
+// PARTNER (second-selected). So we route the partner's pad into the game's P1/P2 bit-field only
+// while the partner's character is the active point fighter.
+//
+// ---------------------------------------------------------------------------------------------
+// 4-player 2v2 tag mod (VS trilogy: xmvsf, mshvsf, mvsc). Teams are P1+P3 vs P2+P4.
+//
+// HOW THE GAME TAGS (xmvsf, verified): the tag routine exchanges character fields between a
+// fixed ACTIVE slot and a fixed BENCH slot -- FF4000<->FF4800 for team 1, FF4400<->FF4C00 for
+// team 2. So the engine moves the CHARACTER, not the input routing: P1 always drives whatever
+// fighter currently occupies FF4000, and P2 always drives FF4400. Field +0x220 of a team's
+// active struct holds that team's on-point index (0 = the starting character, non-zero = the
+// partner); it is cleared at round init and swapped on every tag.
+//
+// THE MOD: when a team's partner is on point, substitute that team's second player's pad for
+// the first player's bits in the stock port reads. The benched player's pad going dead is the
+// intended behaviour -- control follows the character to its owner.
+//
+// P3/P4 pads live in their own ioports (IN_P3/IN_P4) and are ALSO memory-mapped at 0x804050/
+// 0x804052 (an unmapped gap on CPS2). The mapping is not needed by the mux; it exists so the
+// pads can be read directly -- from a Lua probe or the debugger -- to tell "P3 isn't wired up"
+// apart from "the gate never fired", which is otherwise very hard to distinguish.
+//
+// HISTORY (do not regress): an earlier revision gated on FF4444/FF4C44, believing the fighter
+// structs were team-major. They are not -- that map paired bytes from two DIFFERENT teams, so
+// the "flag" looked like it churned randomly and the mux flickered. The approach was sound; the
+// address was wrong.
+bool cps2_state::vs4p_partner_on_point(int team)
+{
+	if (!m_vs4p_gate[team])
+		return false;                       // set not mapped yet -> stay stock
+	return m_maincpu->space(AS_PROGRAM).read_byte(m_vs4p_gate[team]) != 0;
+}
+
+// IN0: P1 = low byte, P2 = high byte (4 dirs + buttons 1-3 each).
+// IN_P3/IN_P4 mirror the game's own 11-bit word layout, so their low byte matches IN0's.
 uint16_t cps2_state::cps2_4p_in0_r()
 {
-	address_space &sp = m_maincpu->space(AS_PROGRAM);
-	const uint16_t p1p2 = ioport("IN0")->read();      // stock: P1 low byte, P2 high byte
-	// MATCH GATE: the character-select screen pre-sets FF4444/FF4C44=1 AND has FF0000=1, so neither
-	// distinguishes select from a fight. FF4000 (team1 char1's struct base byte) is 0 in
-	// select/menu/attract and 1 during any live match -- verified 0 in an interactive-select
-	// snapshot and 1 across 11 match snapshots incl. KO states. Gate routing on it so the select
-	// cursors stay stock P1/P2 (this is the fix for "P3 controls the select screen").
-	if (!sp.read_byte(0xff4000)) return p1p2;
-	const uint16_t p3p4 = ioport("IN0_P34")->read();  // P3 low byte, P4 high byte
-	uint16_t r = p1p2;
-	if (sp.read_byte(0xff4444)) r = (r & 0xff00) | (p3p4 & 0x00ff);  // team1 char2 active -> P3
-	if (sp.read_byte(0xff4c44)) r = (r & 0x00ff) | (p3p4 & 0xff00);  // team2 char2 active -> P4
+	uint16_t r = ioport("IN0")->read();
+	if (vs4p_partner_on_point(0))
+		r = (r & 0xff00) | (ioport("IN_P3")->read() & 0x00ff);          // P3 takes over P1's bits
+	if (vs4p_partner_on_point(1))
+		r = (r & 0x00ff) | ((ioport("IN_P4")->read() & 0x00ff) << 8);   // P4 takes over P2's bits
 	return r;
 }
 
+// IN1: P1 buttons 4-6 = bits 0-2, P2 buttons 4-5 = bits 4-5 (P2's button 6 did not fit here --
+// it lives in IN2, see below). In IN_P3/IN_P4, buttons 4-6 are bits 8-10.
 uint16_t cps2_state::cps2_4p_in1_r()
 {
-	address_space &sp = m_maincpu->space(AS_PROGRAM);
-	const uint16_t p1p2 = ioport("IN1")->read();
-	if (!sp.read_byte(0xff4000)) return p1p2;         // match gate (FF4000): stock P1/P2 off-match
-	const uint16_t p3p4 = ioport("IN1_P34")->read();
-	uint16_t r = p1p2;
-	if (sp.read_byte(0xff4444)) r = (r & 0xfff8) | (p3p4 & 0x0007);  // team1 char2 active -> P3
-	if (sp.read_byte(0xff4c44)) r = (r & 0xffcf) | (p3p4 & 0x0030);  // team2 char2 active -> P4
+	uint16_t r = ioport("IN1")->read();
+	if (vs4p_partner_on_point(0))
+		r = (r & 0xfff8) | ((ioport("IN_P3")->read() >> 8) & 0x0007);   // P3 buttons 4-6
+	if (vs4p_partner_on_point(1))
+		r = (r & 0xffcf) | ((ioport("IN_P4")->read() >> 4) & 0x0030);   // P4 buttons 4-5
 	return r;
 }
 
+// IN2 carries P2's button 6 at 0x4000 (alongside EEPROM/coins/starts/service) because IN1 ran
+// out of room in the 6-button layout. P4 needs it too, or it could not complete FP+FK to tag.
 uint16_t cps2_state::cps2_4p_in2_r()
 {
-	// IN2 carries P2's button 6 (0x4000, the FK half of the tag combo) alongside EEPROM/coins/
-	// starts/service. Team2's other inputs are muxed in IN0/IN1; only button 6 needs handling here,
-	// so P4 gets a full 6 buttons (and can complete FP+FK to tag out) when driving team2's 2nd char.
-	address_space &sp = m_maincpu->space(AS_PROGRAM);
-	uint16_t in2 = ioport("IN2")->read();          // stock: EEPROM, coins, starts, P2 button 6
-	if (sp.read_byte(0xff4000) && sp.read_byte(0xff4c44))  // in a match (FF4000) AND team2 char2 active -> P4 btn6
+	uint16_t r = ioport("IN2")->read();
+	if (vs4p_partner_on_point(1))
 	{
-		const uint16_t p4b6 = ioport("IN1_P34")->read() & 0x0040;  // active-low: 0 = pressed
-		in2 = (in2 & 0xbfff) | (p4b6 ? 0x4000 : 0x0000);
+		const uint16_t b6 = (ioport("IN_P4")->read() >> 10) & 1;        // active-low: 0 = pressed
+		r = (r & 0xbfff) | (b6 << 14);
 	}
-	return in2;
+	return r;
 }
 
 void cps2_state::cps2_4p_map(address_map &map)
 {
 	cps2_map(map);
-	map(0x804000, 0x804001).r(FUNC(cps2_state::cps2_4p_in0_r));  // IN0 mux
-	map(0x804010, 0x804011).r(FUNC(cps2_state::cps2_4p_in1_r));  // IN1 mux
-	map(0x804020, 0x804021).r(FUNC(cps2_state::cps2_4p_in2_r));  // IN2 mux (P2/P4 button 6)
+	map(0x804000, 0x804001).r(FUNC(cps2_state::cps2_4p_in0_r));
+	map(0x804010, 0x804011).r(FUNC(cps2_state::cps2_4p_in1_r));
+	map(0x804020, 0x804021).r(FUNC(cps2_state::cps2_4p_in2_r));
+	map(0x804050, 0x804051).portr("IN_P3");   // raw pads, for probes/debugger (see block comment)
+	map(0x804052, 0x804053).portr("IN_P4");
 }
 
 void cps2_state::cps2_comm_map(address_map &map)
@@ -1697,15 +1725,25 @@ static INPUT_PORTS_START( cps2_2p6b )
 	PORT_BIT( 0x4000, IP_ACTIVE_LOW, IPT_BUTTON6 ) PORT_PLAYER(2)
 INPUT_PORTS_END
 
-// 4 players, 6 buttons — 2v2 tag mod. Teams P1+P3 vs P2+P4; P3/P4 drive each team's
-// SECOND (tagged-in) character. IN0_P34/IN1_P34 are NOT memory-mapped: the input mux
-// (cps2_4p_in0_r/in1_r) reads them and substitutes P3/P4 for P1/P2 based on each team's
-// active-character flag (work RAM struct+0x44). Same bit layout as IN0/IN1's P1/P2 fields:
-// P3 in the low byte, P4 in the high byte.
+// 4 players, 6 buttons — 2v2 tag mod (VS trilogy: xmvsf, mshvsf, mvsc).
+// Teams are P1+P3 vs P2+P4; P3/P4 drive each team's SECOND (tagged-in) character.
+//
+// IN0/IN1/IN2 are left completely STOCK, so P1/P2 behave exactly as on unmodified hardware.
+// P3/P4 instead get their own read-only registers (IN_P3 @0x804050, IN_P4 @0x804052) in the
+// unmapped 0x804050-0x80409f gap of the CPS2 I/O map. A new register is required, not a
+// preference: CPS2's native 4-player wiring puts P3/P4 in IN1, but a 6-button game already
+// spends IN1 on buttons 4-6 (P2's button 6 doesn't even fit — it lives in IN2 at 0x4000).
+// 4 players x (4 dirs + 6 buttons) = 40 bits > the 32 bits IN0+IN1 provide.
+//
+// The bit layout below deliberately MIRRORS the 11-bit word the game itself builds in work RAM
+// (see the master input routine: word = (IN1_low << 8) | IN0_low, then NOT + AND #$7ff):
+//   bit0 Right, 1 Left, 2 Down, 3 Up, 4 B1, 5 B2, 6 B3, (7 unused), 8 B4, 9 B5, 10 B6
+// Active-low like every other CPS2 input. Mirroring the layout keeps the companion ROM patch
+// down to: move.w <reg>,d0 / not.w d0 / andi.w #$7ff,d0 / move.w d0,<player word>.
 static INPUT_PORTS_START( cps2_4p6b )
 	PORT_INCLUDE(cps2_2p6b)
 
-	PORT_START("IN0_P34")
+	PORT_START("IN_P3")
 	PORT_BIT( 0x0001, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT ) PORT_8WAY PORT_PLAYER(3)
 	PORT_BIT( 0x0002, IP_ACTIVE_LOW, IPT_JOYSTICK_LEFT ) PORT_8WAY PORT_PLAYER(3)
 	PORT_BIT( 0x0004, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_8WAY PORT_PLAYER(3)
@@ -1713,21 +1751,25 @@ static INPUT_PORTS_START( cps2_4p6b )
 	PORT_BIT( 0x0010, IP_ACTIVE_LOW, IPT_BUTTON1 ) PORT_PLAYER(3)
 	PORT_BIT( 0x0020, IP_ACTIVE_LOW, IPT_BUTTON2 ) PORT_PLAYER(3)
 	PORT_BIT( 0x0040, IP_ACTIVE_LOW, IPT_BUTTON3 ) PORT_PLAYER(3)
-	PORT_BIT( 0x0100, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT ) PORT_8WAY PORT_PLAYER(4)
-	PORT_BIT( 0x0200, IP_ACTIVE_LOW, IPT_JOYSTICK_LEFT ) PORT_8WAY PORT_PLAYER(4)
-	PORT_BIT( 0x0400, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_8WAY PORT_PLAYER(4)
-	PORT_BIT( 0x0800, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_8WAY PORT_PLAYER(4)
-	PORT_BIT( 0x1000, IP_ACTIVE_LOW, IPT_BUTTON1 ) PORT_PLAYER(4)
-	PORT_BIT( 0x2000, IP_ACTIVE_LOW, IPT_BUTTON2 ) PORT_PLAYER(4)
-	PORT_BIT( 0x4000, IP_ACTIVE_LOW, IPT_BUTTON3 ) PORT_PLAYER(4)
+	PORT_BIT( 0x0080, IP_ACTIVE_LOW, IPT_UNUSED )
+	PORT_BIT( 0x0100, IP_ACTIVE_LOW, IPT_BUTTON4 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0200, IP_ACTIVE_LOW, IPT_BUTTON5 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0400, IP_ACTIVE_LOW, IPT_BUTTON6 ) PORT_PLAYER(3)
+	PORT_BIT( 0xf800, IP_ACTIVE_LOW, IPT_UNUSED )
 
-	PORT_START("IN1_P34")
-	PORT_BIT( 0x0001, IP_ACTIVE_LOW, IPT_BUTTON4 ) PORT_PLAYER(3)
-	PORT_BIT( 0x0002, IP_ACTIVE_LOW, IPT_BUTTON5 ) PORT_PLAYER(3)
-	PORT_BIT( 0x0004, IP_ACTIVE_LOW, IPT_BUTTON6 ) PORT_PLAYER(3)
-	PORT_BIT( 0x0010, IP_ACTIVE_LOW, IPT_BUTTON4 ) PORT_PLAYER(4)
-	PORT_BIT( 0x0020, IP_ACTIVE_LOW, IPT_BUTTON5 ) PORT_PLAYER(4)
-	PORT_BIT( 0x0040, IP_ACTIVE_LOW, IPT_BUTTON6 ) PORT_PLAYER(4)
+	PORT_START("IN_P4")
+	PORT_BIT( 0x0001, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT ) PORT_8WAY PORT_PLAYER(4)
+	PORT_BIT( 0x0002, IP_ACTIVE_LOW, IPT_JOYSTICK_LEFT ) PORT_8WAY PORT_PLAYER(4)
+	PORT_BIT( 0x0004, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_8WAY PORT_PLAYER(4)
+	PORT_BIT( 0x0008, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_8WAY PORT_PLAYER(4)
+	PORT_BIT( 0x0010, IP_ACTIVE_LOW, IPT_BUTTON1 ) PORT_PLAYER(4)
+	PORT_BIT( 0x0020, IP_ACTIVE_LOW, IPT_BUTTON2 ) PORT_PLAYER(4)
+	PORT_BIT( 0x0040, IP_ACTIVE_LOW, IPT_BUTTON3 ) PORT_PLAYER(4)
+	PORT_BIT( 0x0080, IP_ACTIVE_LOW, IPT_UNUSED )
+	PORT_BIT( 0x0100, IP_ACTIVE_LOW, IPT_BUTTON4 ) PORT_PLAYER(4)
+	PORT_BIT( 0x0200, IP_ACTIVE_LOW, IPT_BUTTON5 ) PORT_PLAYER(4)
+	PORT_BIT( 0x0400, IP_ACTIVE_LOW, IPT_BUTTON6 ) PORT_PLAYER(4)
+	PORT_BIT( 0xf800, IP_ACTIVE_LOW, IPT_UNUSED )
 INPUT_PORTS_END
 
 // 2 players, 6 buttons, and 1 ticket dispenser (2 rows of 3 buttons)
@@ -1879,7 +1921,8 @@ void cps2_state::cps2(machine_config &config)
 void cps2_state::cps2_4p(machine_config &config)
 {
 	cps2(config);
-	// Swap in the input-mux program map (overrides the IN0/IN1 reads at 0x804000/0x804010).
+	// Adds the P3/P4 registers at 0x804050/0x804052. Stock CPS2 behaviour is otherwise untouched,
+	// so a 4p-enabled set still runs its unpatched program ROM exactly as before.
 	m_maincpu->set_addrmap(AS_PROGRAM, &cps2_state::cps2_4p_map);
 }
 
@@ -11052,6 +11095,24 @@ void cps2_state::init_cps2()
 	init_cps2nc();
 }
 
+// 4-player 2v2 tag mod. Each set supplies the work-RAM address of its two teams' on-point index
+// (field +0x220 of each team's ACTIVE fighter struct -- see the cps2_4p_in0_r block comment).
+// The addresses are the only per-game part of the mod; everything else is shared. To map a new
+// set, disassemble its tag routine to find the active-slot bases, then add an init here.
+void cps2_state::init_vs4p(uint32_t gate1, uint32_t gate2)
+{
+	m_vs4p_gate[0] = gate1;
+	m_vs4p_gate[1] = gate2;
+	init_cps2();
+}
+
+// Verified: tag routine @0x010250 exchanges FF4000<->FF4800 (team 1) and FF4400<->FF4C00 (team 2).
+void cps2_state::init_xmvsf_4p()  { init_vs4p(0xff4220, 0xff4620); }
+
+// Scaffolded, gates not yet mapped -> these run bit-for-bit stock until the addresses are found.
+void cps2_state::init_mshvsf_4p() { init_vs4p(0, 0); }
+void cps2_state::init_mvsc_4p()   { init_vs4p(0, 0); }
+
 void cps2_state::init_cps2nc()
 {
 	// Initialize some video elements
@@ -12835,7 +12896,7 @@ GAME( 1996, megaman2a,  megaman2, cps2,     cps2_2p3b, cps2_state, init_cps2,   
 GAME( 1996, rockman2j,  megaman2, cps2,     cps2_2p3b, cps2_state, init_cps2,     ROT0,   "Capcom", "Rockman 2: The Power Fighters (Japan 960708)",                                  MACHINE_SUPPORTS_SAVE )
 GAME( 1996, megaman2h,  megaman2, cps2,     cps2_2p3b, cps2_state, init_cps2,     ROT0,   "Capcom", "Mega Man 2: The Power Fighters (Hispanic 960712)",                              MACHINE_SUPPORTS_SAVE )
 GAME( 1996, qndream,    0,        cps2,     qndream,   cps2_state, init_cps2,     ROT0,   "Capcom", "Quiz Nanairo Dreams: Nijiirochou no Kiseki (Japan 960826)",                     MACHINE_SUPPORTS_SAVE )
-GAME( 1996, xmvsf,      0,        cps2_4p,  cps2_4p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (Europe 961004)",                                      MACHINE_SUPPORTS_SAVE )
+GAME( 1996, xmvsf,      0,        cps2_4p,  cps2_4p6b, cps2_state, init_xmvsf_4p, ROT0,   "Capcom", "X-Men Vs. Street Fighter (Europe 961004)",                                      MACHINE_SUPPORTS_SAVE )
 GAME( 1996, xmvsfr1,    xmvsf,    cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (Europe 960910)",                                      MACHINE_SUPPORTS_SAVE )
 GAME( 1996, xmvsfu,     xmvsf,    cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (USA 961023)",                                         MACHINE_SUPPORTS_SAVE )
 GAME( 1996, xmvsfur1,   xmvsf,    cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (USA 961004)",                                         MACHINE_SUPPORTS_SAVE )
@@ -12860,7 +12921,7 @@ GAME( 1997, vsavj,      vsav,     cps2,     cps2_2p6b, cps2_state, init_cps2,   
 GAME( 1997, vsava,      vsav,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Vampire Savior: The Lord of Vampire (Asia 970519)",                             MACHINE_SUPPORTS_SAVE )
 GAME( 1997, vsavh,      vsav,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Vampire Savior: The Lord of Vampire (Hispanic 970519)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1997, vsavb,      vsav,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Vampire Savior: The Lord of Vampire (Brazil 970519)",                           MACHINE_SUPPORTS_SAVE )
-GAME( 1997, mshvsf,     0,        cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Europe 970625)",                        MACHINE_SUPPORTS_SAVE )
+GAME( 1997, mshvsf,     0,        cps2_4p,  cps2_4p6b, cps2_state, init_mshvsf_4p, ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Europe 970625)",                        MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfu,    mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (USA 970827)",                           MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfu1,   mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (USA 970625)",                           MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfj,    mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Japan 970707)",                         MACHINE_SUPPORTS_SAVE )
@@ -12884,7 +12945,7 @@ GAME( 1997, sgemfh,     sgemf,    cps2,     cps2_2p3b, cps2_state, init_cps2,   
 GAME( 1997, vhunt2,     0,        cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Vampire Hunter 2: Darkstalkers Revenge (Japan 970929)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1997, vhunt2r1,   vhunt2,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Vampire Hunter 2: Darkstalkers Revenge (Japan 970913)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1997, vsav2,      0,        cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Vampire Savior 2: The Lord of Vampire (Japan 970913)",                          MACHINE_SUPPORTS_SAVE )
-GAME( 1998, mvsc,       0,        cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Europe 980123)",                      MACHINE_SUPPORTS_SAVE )
+GAME( 1998, mvsc,       0,        cps2_4p,  cps2_4p6b, cps2_state, init_mvsc_4p,  ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Europe 980123)",                      MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscr1,     mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Europe 980112)",                      MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscu,      mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (USA 980123)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscur1,    mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (USA 971222)",                         MACHINE_SUPPORTS_SAVE )
