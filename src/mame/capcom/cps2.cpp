@@ -11116,8 +11116,15 @@ void cps2_state::init_vs4p(uint32_t gate1, uint32_t gate2)
 // Verified: tag routine @0x010250 exchanges FF4000<->FF4800 (team 1) and FF4400<->FF4C00 (team 2).
 void cps2_state::init_xmvsf_4p()  { init_vs4p(0xff4220, 0xff4620); }
 
-// Scaffolded, gates not yet mapped -> these run bit-for-bit stock until the addresses are found.
-void cps2_state::init_mshvsf_4p() { init_vs4p(0, 0); }
+// Verified live (probe22, 14/14 both teams). mshvsf does NOT reuse xmvsf's layout: its fighter
+// structs are an array at FF3800 stride 0x400 (its code computes FF3800 + index*0x400 from a slot
+// index at +0x94), and xmvsf's +0x220 on-point field has no counterpart -- FF3A20/FF3E20 never
+// move on a tag. Found by RAM-differencing scripted tags (probe23) rather than by porting xmvsf's
+// offsets. Reads 0 with the starter in and 3 with the partner in, so it is a state field rather
+// than a 0/1 index; the mux only tests != 0, which the game confirms gates correctly both ways.
+void cps2_state::init_mshvsf_4p() { init_vs4p(0xff4079, 0xff4479); }
+
+// Scaffolded, gate not yet mapped -> runs bit-for-bit stock until the addresses are found.
 void cps2_state::init_mvsc_4p()   { init_vs4p(0, 0); }
 
 void cps2_state::init_cps2nc()
