@@ -1395,6 +1395,17 @@ void cps2_state::cps2_map(address_map &map)
 // pc-relative code must keep such reads pc-relative, or embed its data with the code in the
 // decrypted buffer (the stub embeds). Symptom otherwise: garbage pointer -> address error the
 // first time a human fighter polls input (attract fighters are CPU-driven and never hit it).
+//
+// !! PAD-BYTE RULE (found via live debugger; a v2 stub broke the hit system on this): mvsc's
+// collision-side registration (0x4AB4) does `tst.b ($2,a6)` -- fighter struct +0x02 (the pad
+// index) doubles as the TEAM SIDE: zero = side A, nonzero = side B. Giving partners pad
+// indices 2/3 puts both on side B -> most attack pairs stop interacting and P1 gains friendly
+// fire. Therefore +0x02 must stay 0/1 FOREVER. STUB v3 (user-verified in Lua, probe47) routes
+// input by SLOT ADDRESS instead: the reader stub compares a6 against 0xFF3800/0xFF3C00 and
+// serves the raw P3/P4 ports (804050/804052, not.w for polarity) for those fighters, the
+// original word table for everyone else. Control then follows the CHARACTER (P3 always drives
+// the team's second pick, through tags and duos) -- for mvsc this also supersedes the port mux
+// below, which the C++ port of the 4-live mode should disable/bypass on that set.
 bool cps2_state::vs4p_partner_on_point(int team)
 {
 	if (!m_vs4p_gate[team])
