@@ -1377,6 +1377,31 @@ void cps2_state::cps2_map(address_map &map)
 // teams, so the "flag" appeared to churn at random and the mux flickered. The approach was
 // sound; one address was wrong. Every gate here is verified live by a self-driving test
 // (14 assertions per game: gate on/off, partner drives, benched pad dead, both directions).
+//
+// --- STAGE 2 (in progress on mvsc): all four fighters live at once -----------------------------
+// Found 2026-07-16, Lua-prototyped, not yet in this driver. Recorded here because the eventual
+// C++ lands in this file and the facts below are load-bearing.
+//
+// HOW MVSC ROUTES INPUT: one reader routine (0x1367E) runs per fighter per frame. It picks the
+// fighter's input word through a pointer table @0x136F4 indexed by struct byte +0x02 ("which pad
+// drives me": 0 -> FF444C, 1 -> FF444E); +0x03 selects human path vs CPU/AI path. Cur/prev/edge
+// input words are per-fighter IN THE STRUCT (+0xD0..+0xDA). In 2P play all four fighter slots
+// take the human path with pad indices 0/1/0/1 -- a Duo partner reads its team's word, which is
+// the entire "both characters move as one" problem.
+//
+// THE PLANNED PATCH (all inside m_decrypted_opcodes; ROMs stay stock, dipswitch-gateable):
+//   * stub at 0x3FF000 (dead 0xFF fill) carrying its OWN 4-entry pointer table:
+//     pads 0/1 -> FF444C/FF444E; pads 2/3 -> this driver's raw P3/P4 ports at 804050/804052
+//     plus a not.w (ports are active-low; the caller's andi #$77f masks).
+//   * 0x13698: movea.l $136f4(pc,d0.w),a0 + move.w (a0),d0 (6 bytes) -> jsr $3ff000.l (6 bytes).
+//   * giving a fighter to P3/P4 is then ONE RAM BYTE: FF3802=2 / FF3C02=3.
+//
+// !! ENCRYPTION RULE (a v1 stub crashed on this): the 68000 routes PC-RELATIVE operand reads
+// through the OPCODE space, so Capcom stores data tables INSIDE the encrypted region and reads
+// them (pc)-relative -- the table @136F4 is ciphertext to a normal (An) data read. Any relocated
+// pc-relative code must keep such reads pc-relative, or embed its data with the code in the
+// decrypted buffer (the stub embeds). Symptom otherwise: garbage pointer -> address error the
+// first time a human fighter polls input (attract fighters are CPU-driven and never hit it).
 bool cps2_state::vs4p_partner_on_point(int team)
 {
 	if (!m_vs4p_gate[team])
