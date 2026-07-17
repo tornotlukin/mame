@@ -1405,6 +1405,13 @@ void cps2_state::cps2_map(address_map &map)
 //   * duo timer bar: starves when the singleton duo timers FF4034/FF4036 are zero.
 //   * top-HUD (health bar art) kill switch if ever needed: beq->bra at 0x249DA skips the
 //     staged-sprite copy from GFX-RAM 0x924000 (count word at FFF640).
+//   * WIDESCREEN WALLS (goes with the 512px set_raw in cps2_4p below; user-verified): fighter
+//     X is in STAGE coordinates; the screen-edge clamp is camera-relative, in the common
+//     movement routine at 0x13AE2: a0 = ptrtable[0x2563A + stage*4] -> struct whose word +0
+//     is the camera X; left wall = camX + imm@0x13AF6 (stock 0x55), right wall = camX +
+//     imm@0x13B0A (stock 0x1AB) -- both 0x15 (21px) inside the stock 384px edges. For the
+//     full 512px view patch the two immediates (decrypted buffer) to 0x15 / 0x1EB: same
+//     margins, walkable 342px -> 470px. Struct byte +0xB9 = touching-wall flag (2=L, 1=R).
 //
 // !! PAD-BYTE RULE (found via live debugger; a v2 stub broke the hit system on this): mvsc's
 // collision-side registration (0x4AB4) does `tst.b ($2,a6)` -- fighter struct +0x02 (the pad
