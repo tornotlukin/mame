@@ -1985,6 +1985,18 @@ void cps2_state::cps2_4p(machine_config &config)
 	// Adds the P3/P4 registers at 0x804050/0x804052. Stock CPS2 behaviour is otherwise untouched,
 	// so a 4p-enabled set still runs its unpatched program ROM exactly as before.
 	m_maincpu->set_addrmap(AS_PROGRAM, &cps2_state::cps2_4p_map);
+
+	// WIDESCREEN EXPERIMENT (4p sets only): open the visible window from the stock 384px
+	// (64..447 of the 512px raster) to 480px. The scroll layers are wider than the screen in
+	// VRAM (scroll2 is 1024px), so the margins can contain real playfield; the open questions
+	// are game-side sprite culling and the camera clamp at the design width. Feasibility look
+	// for the 4-live mode -- revert to stock timings if the margins are junk.
+	// (set_visible_area after set_raw crashed at boot; re-issue set_raw with a wider window.)
+	// Full 512px raster -- the widest the CPS-A/B composes; user-approved after the 480px test.
+	m_screen->set_raw(CPS_PIXEL_CLOCK, CPS_HTOTAL, 0, CPS_HTOTAL, CPS_VTOTAL, CPS_VBEND, CPS_VBSTART);
+	// Present at 16:9 so pixels keep their stock shape: 512/384 x (4:3) = 16:9. Without this
+	// the wider image gets squeezed into the stock 4:3 window and looks horizontally squished.
+	m_screen->set_physical_aspect(16, 9);
 }
 
 void cps2_state::cps2comm(machine_config &config)
