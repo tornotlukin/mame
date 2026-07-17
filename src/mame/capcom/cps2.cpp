@@ -1412,6 +1412,17 @@ void cps2_state::cps2_map(address_map &map)
 //     imm@0x13B0A (stock 0x1AB) -- both 0x15 (21px) inside the stock 384px edges. For the
 //     full 512px view patch the two immediates (decrypted buffer) to 0x15 / 0x1EB: same
 //     margins, walkable 342px -> 470px. Struct byte +0xB9 = touching-wall flag (2=L, 1=R).
+//   * SCREEN-ANCHORED SPECIALS (user-verified both facings): a handful of moves anchor to
+//     the screen edge via the idiom `d0 = camX (same 0x2563A struct); addi.w #$40 (left
+//     edge); if facing (+0x4B==0 means facing left): addi.w #$180 (right edge)`. Exactly 7
+//     sites ROM-wide; Jin's Blodia Punch owns 4 (calcs 0x9F05A/0x9F230/0x9E10A + the
+//     BINDING travel cap, a cmpi/move #$150 pair on ext +0xC2 at 0x9F14C/0x9F154; the
+//     0x160/0x80 caps beside the calcs never bind). Widescreen: 0x40->0x00, 0x180->0x200,
+//     cap 0x150->0x1D0 (tip = edge+0x30, stock proportion). Remaining sites for the same
+//     transform when their moves are exercised: 0x79DE0 (beam, cap 0x160 shape),
+//     0x38934/0x38F9C (edge-approach velocity, facing byte +0xB3). Fighter-relative moves
+//     and travel-till-offscreen projectiles need NO changes. Arm objects: script ptr +0x68
+//     (character-script pointer, not 68k code), X +0x0C, owner +0x54, ext +0xC2.
 //
 // !! PAD-BYTE RULE (found via live debugger; a v2 stub broke the hit system on this): mvsc's
 // collision-side registration (0x4AB4) does `tst.b ($2,a6)` -- fighter struct +0x02 (the pad
