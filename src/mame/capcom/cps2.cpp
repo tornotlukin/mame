@@ -1403,6 +1403,16 @@ void cps2_state::cps2_map(address_map &map)
 // decrypted buffer (the stub embeds). Symptom otherwise: garbage pointer -> address error the
 // first time a human fighter polls input (attract fighters are CPU-driven and never hit it).
 //
+// MVSC 4-LIVE COSMETIC STATE (for the C++ port of the mode; all user-verified in Lua):
+//   * 1P/2P marker arrows: pool objects in FF8000-FFDFxx with handler ptr +0x34 in
+//     {0x86EF0, 0x86F08}; zeroing the object's +0x04 word (per frame, rescan the pool
+//     periodically for respawns) removes the arrows with no side effects.
+//   * duo bg effect: video staging FF443E committed to reg 0x804166, gated by FF4445/FF4439 --
+//     clear the GATES to restore the stage backdrop (writing the staged VALUE blanks the layer).
+//   * duo timer bar: starves when the singleton duo timers FF4034/FF4036 are zero.
+//   * top-HUD (health bar art) kill switch if ever needed: beq->bra at 0x249DA skips the
+//     staged-sprite copy from GFX-RAM 0x924000 (count word at FFF640).
+//
 // !! PAD-BYTE RULE (found via live debugger; a v2 stub broke the hit system on this): mvsc's
 // collision-side registration (0x4AB4) does `tst.b ($2,a6)` -- fighter struct +0x02 (the pad
 // index) doubles as the TEAM SIDE: zero = side A, nonzero = side B. Giving partners pad
