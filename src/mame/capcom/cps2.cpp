@@ -1412,6 +1412,16 @@ void cps2_state::cps2_map(address_map &map)
 //   * duo timer bar: starves when the singleton duo timers FF4034/FF4036 are zero.
 //   * top-HUD (health bar art) kill switch if ever needed: beq->bra at 0x249DA skips the
 //     staged-sprite copy from GFX-RAM 0x924000 (count word at FFF640).
+//   * KO JUMP-IN CUT (user-verified): on KO the surviving partner (already on the field)
+//     plays the stock entry jump-in. Trigger is NOT FF4022 (status word), the +0x26A "enter
+//     field" command byte, or the 0x7B934 controller spawn -- all tested dead ends. Real
+//     path (found live: bp 0x15EE4 entry-teleport + history): dying fighter gets command 4
+//     at +0x266 -> dispatcher 0xD6F6 -> 0x15B76 (death bookkeeping) -> 0x15BA8 `movea.l
+//     $284(a6),a6` switches to the partner and runs its entry init (teleport to camX+0x210
+//     via 0x15EBE, entry velocity). THE CUT: 0x15BA8 `2C6E 0284` -> `6000 0106` (bra.w
+//     $15CB0) skips ONLY the partner-entry block, keeping all death bookkeeping and the
+//     partner-dead branch 0x15CB4. The engine's own point-status transfer then does the
+//     right thing (survivor inherits point + camera focus). Decrypted-buffer patch.
 //   * WIDESCREEN WALLS (goes with the 512px set_raw in cps2_4p below; user-verified): fighter
 //     X is in STAGE coordinates; the screen-edge clamp is camera-relative, in the common
 //     movement routine at 0x13AE2: a0 = ptrtable[0x2563A + stage*4] -> struct whose word +0
