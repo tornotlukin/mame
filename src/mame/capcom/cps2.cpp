@@ -679,6 +679,7 @@ public:
 	void init_xmvsf_4p() ATTR_COLD;
 	void init_mshvsf_4p() ATTR_COLD;
 	void init_mvsc_4p() ATTR_COLD;
+	void init_mvsc2v2_4p() ATTR_COLD;
 
 protected:
 	virtual void machine_start() override ATTR_COLD;
@@ -6038,6 +6039,43 @@ ROM_START( mvscu )
 	ROM_LOAD( "mvscu.key",    0x000000, 0x000014, CRC(a83db333) SHA1(7f7288ceadf233d913728f7c4a8841adcb5994e8) )
 ROM_END
 
+// 4-player 2v2 variant on the USA (mvscu) base. mvcu2v2.03d/.04d = mvcu.03d/.04d + the "all
+// characters" patch (sets the enable-all-chars flag 0x40 via a hooked routine), re-encrypted for
+// mvscu.key. See tools/mvsc2v2_allchars.py. 4:3 (no widescreen); routing via +0x00 gate.
+ROM_START( mvsc2v2 )
+	ROM_REGION( CODE_SIZE, "maincpu", 0 ) // 68000 code
+	ROM_LOAD16_WORD_SWAP( "mvcu2v2.03d", 0x000000, 0x80000, CRC(b1822dda) SHA1(12b2f3b7b2a45d86b952fc891b3ed1c853fe3513) )
+	ROM_LOAD16_WORD_SWAP( "mvcu2v2.04d", 0x080000, 0x80000, CRC(dd2f1026) SHA1(6835390bc4b4c58d651f39c3ede543b31367d782) )
+	ROM_LOAD16_WORD_SWAP( "mvc.05a",  0x100000, 0x80000, CRC(2d8c8e86) SHA1(b07d640a734c5d336054ed05195786224c9a6cd4) )
+	ROM_LOAD16_WORD_SWAP( "mvc.06a",  0x180000, 0x80000, CRC(8528e1f5) SHA1(cd065c05268ab581b05676da544baf6af642acac) )
+	ROM_LOAD16_WORD_SWAP( "mvc.07",   0x200000, 0x80000, CRC(c3baa32b) SHA1(d35589847e0753e869ffcd7c3abed925bfdb0fa2) )
+	ROM_LOAD16_WORD_SWAP( "mvc.08",   0x280000, 0x80000, CRC(bc002fcd) SHA1(0b6735a071a9274f7ab25c743271fc30411fe819) )
+	ROM_LOAD16_WORD_SWAP( "mvc.09",   0x300000, 0x80000, CRC(c67b26df) SHA1(6e9969246c57269d7ba0992a5cc319c8910bf8a9) )
+	ROM_LOAD16_WORD_SWAP( "mvc.10",   0x380000, 0x80000, CRC(0fdd1e26) SHA1(5fa684d823b4f4eec61ed9e9b8938af5272ae1ed) )
+
+	ROM_REGION( 0x2000000, "gfx", 0 )
+	ROM_LOAD64_WORD( "mvc.13m",   0x0000000, 0x400000, CRC(fa5f74bc) SHA1(79a619248938a85ce4f7794a704647b9cf564fbc) )
+	ROM_LOAD64_WORD( "mvc.15m",   0x0000002, 0x400000, CRC(71938a8f) SHA1(6982f7203458c1c46a1c1c13c0d0f2a5e109d271) )
+	ROM_LOAD64_WORD( "mvc.17m",   0x0000004, 0x400000, CRC(92741d07) SHA1(ddfd70eab7c983ab452194b1860059f8ad694459) )
+	ROM_LOAD64_WORD( "mvc.19m",   0x0000006, 0x400000, CRC(bcb72fc6) SHA1(46ab98dcdf6f5d611646a22a7355939ef5b2bbe5) )
+	ROM_LOAD64_WORD( "mvc.14m",   0x1000000, 0x400000, CRC(7f1df4e4) SHA1(ede92b31c1fe87f91b4fe74ac211f2fb5f863bc2) )
+	ROM_LOAD64_WORD( "mvc.16m",   0x1000002, 0x400000, CRC(90bd3203) SHA1(ed83208c486ea0f407b7e5d16a8cf242a6f73774) )
+	ROM_LOAD64_WORD( "mvc.18m",   0x1000004, 0x400000, CRC(67aaf727) SHA1(e0e69104e31d2c41e18c0d24e9ab962406a7ca9a) )
+	ROM_LOAD64_WORD( "mvc.20m",   0x1000006, 0x400000, CRC(8b0bade8) SHA1(c5732361bb4bf284c4d12a82ac2c5750b1f9d441) )
+
+	ROM_REGION( QSOUND_SIZE, "audiocpu", 0 ) // 64k for the audio CPU (+banks)
+	ROM_LOAD( "mvc.01",   0x00000, 0x08000, CRC(41629e95) SHA1(36925c05b5fdcbe43283a882d021e5360c947061) )
+	ROM_CONTINUE(         0x10000, 0x18000 )
+	ROM_LOAD( "mvc.02",   0x28000, 0x20000, CRC(963abf6b) SHA1(6b784870e338701cefabbbe4669984b5c4e8a9a5) )
+
+	ROM_REGION( 0x800000, "qsound", 0 ) // QSound samples
+	ROM_LOAD16_WORD_SWAP( "mvc.11m",   0x000000, 0x400000, CRC(850fe663) SHA1(81e519d05a08855f242ea2e17ee0859b449db895) )
+	ROM_LOAD16_WORD_SWAP( "mvc.12m",   0x400000, 0x400000, CRC(7ccb1896) SHA1(74caadf3282fcc6acffb1bbe3734106f81124121) )
+
+	ROM_REGION( 0x20, "key", 0 )
+	ROM_LOAD( "mvscu.key",    0x000000, 0x000014, CRC(a83db333) SHA1(7f7288ceadf233d913728f7c4a8841adcb5994e8) )
+ROM_END
+
 ROM_START( mvscur1 )
 	ROM_REGION( CODE_SIZE, "maincpu", 0 ) // 68000 code
 	ROM_LOAD16_WORD_SWAP( "mvcu.03",  0x000000, 0x80000, CRC(13f2be57) SHA1(229520c5f4171abae1acdfb9544b356b568b5f2d) )
@@ -11334,6 +11372,11 @@ void cps2_state::init_mshvsf_4p() { init_vs4p(0xff4000, 0xff4400); }
 // mshvsf on the same hunch failed completely. Gate reads 3 with the partner in, same as mshvsf.
 void cps2_state::init_mvsc_4p()   { init_vs4p(0xff3879, 0xff3c79); }
 
+// mvsc2v2 (2v2 variant): same fix as mshvsf -- the +0x79 gate above is pose-coupled (per-frame
+// turbo). Use the partner slot's +0x00 ON-FIELD flag instead. mvsc partner slots = FF3800/FF3C00
+// (base FF3000, the two on-point slots), so gate = FF3800 / FF3C00. (Verify live like probe100.)
+void cps2_state::init_mvsc2v2_4p() { init_vs4p(0xff3800, 0xff3c00); }
+
 void cps2_state::init_cps2nc()
 {
 	// Initialize some video elements
@@ -13171,6 +13214,7 @@ GAME( 1997, vsav2,      0,        cps2,     cps2_2p6b, cps2_state, init_cps2,   
 GAME( 1998, mvsc,       0,        cps2_4p,  cps2_4p6b, cps2_state, init_mvsc_4p,  ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Europe 980123)",                      MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscr1,     mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Europe 980112)",                      MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscu,      mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (USA 980123)",                         MACHINE_SUPPORTS_SAVE )
+GAME( 1998, mvsc2v2,    mvsc,     cps2_4p_43, cps2_4p6b, cps2_state, init_mvsc2v2_4p, ROT0, "TORNOTLUKIN", "Marvel Vs. Capcom: Clash of Super Heroes 2v2",                            MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscur1,    mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (USA 971222)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscj,      mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Japan 980123)",                       MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscjr1,    mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Japan 980112)",                       MACHINE_SUPPORTS_SAVE )
