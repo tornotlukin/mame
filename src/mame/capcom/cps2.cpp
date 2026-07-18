@@ -1427,6 +1427,18 @@ void cps2_state::cps2_map(address_map &map)
 //     imm@0x13B0A (stock 0x1AB) -- both 0x15 (21px) inside the stock 384px edges. For the
 //     full 512px view patch the two immediates (decrypted buffer) to 0x15 / 0x1EB: same
 //     margins, walkable 342px -> 470px. Struct byte +0xB9 = touching-wall flag (2=L, 1=R).
+//   * WIDESCREEN CAMERA CLAMP (user-verified; goes with the 512px view): the 512px window
+//     over-scrolls past the tilemap at stage ends because the game's camera-scroll clamp is
+//     tuned for the 384px window. The clamp is at 0xCCB68: camera obj (a6) target +0x76 is
+//     limited between +0x68 (min bound, = -0x40 at stage left) and +0x6A (max bound, per
+//     stage), result -> +0xC, then staged to FF443A (scroll1 X) by 0xCB94A. Bounds are
+//     register-loaded (no immediate to patch) and the camera obj address is DYNAMIC, so the
+//     fix is a CODE-CAVE: hijack 0xCCB68 with `jsr <cave>` + `bra $ccb86`; the cave re-runs
+//     the clamp with min +0x40 / max -0x40 (pull each scroll limit in 64px = the 512-384
+//     extra-width, 64/side). Kills the corner void. NOTE (still open): after this, the
+//     PARALLAX SCROLL PLANES still render within 4:3 -- the per-plane draw/scroll width is
+//     tied to 384px; widening the visible raster (set_raw) did not widen the plane draw
+//     window. That is a separate driver/video fix (scroll-plane render width vs 512 raster).
 //   * SCREEN-ANCHORED SPECIALS (user-verified both facings): a handful of moves anchor to
 //     the screen edge via the idiom `d0 = camX (same 0x2563A struct); addi.w #$40 (left
 //     edge); if facing (+0x4B==0 means facing left): addi.w #$180 (right edge)`. Exactly 7
