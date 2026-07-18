@@ -1433,11 +1433,15 @@ void cps2_state::cps2_map(address_map &map)
 //     sites ROM-wide; Jin's Blodia Punch owns 4 (calcs 0x9F05A/0x9F230/0x9E10A + the
 //     BINDING travel cap, a cmpi/move #$150 pair on ext +0xC2 at 0x9F14C/0x9F154; the
 //     0x160/0x80 caps beside the calcs never bind). Widescreen: 0x40->0x00, 0x180->0x200,
-//     cap 0x150->0x1D0 (tip = edge+0x30, stock proportion). Remaining sites for the same
-//     transform when their moves are exercised: 0x79DE0 (beam, cap 0x160 shape),
-//     0x38934/0x38F9C (edge-approach velocity, facing byte +0xB3). Fighter-relative moves
-//     and travel-till-offscreen projectiles need NO changes. Arm objects: script ptr +0x68
-//     (character-script pointer, not 68k code), X +0x0C, owner +0x54, ext +0xC2.
+//     cap 0x150->0x1D0 (tip = edge+0x30, stock proportion). A full-ROM idiom scan found only
+//     8 edge sites; the other CAPPED screen-filler is a SHARED screen-super routine at
+//     0x79DE0 (anchor +0xC0, ext +0xC2, cap 0x160): patch it the same way (0x40->0x00,
+//     0x180->0x200, cap 0x160->0x200) and ONE patch widens Captain Commando's Captain Sword,
+//     Gambit's Royal Flush, War Machine's Proton Cannon, etc. (user-verified 2026-07-17).
+//     The rest are movement (dash-to-edge velocity 0x38934/0x38F9C/0x92136, facing +0xB3,
+//     no cap) + Jin teleport 0x9E54E -- NOT screen-fillers, leave them. Fighter-relative
+//     moves and travel-till-offscreen projectiles need NO changes. Arm objects: script ptr
+//     +0x68 (character-script pointer, not 68k code), X +0x0C, owner +0x54, ext +0xC2.
 //
 // !! PAD-BYTE RULE (found via live debugger; a v2 stub broke the hit system on this): mvsc's
 // collision-side registration (0x4AB4) does `tst.b ($2,a6)` -- fighter struct +0x02 (the pad
