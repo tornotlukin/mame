@@ -5688,6 +5688,46 @@ ROM_START( mshvsfj1 )
 	ROM_LOAD( "mshvsfj.key",  0x000000, 0x000014, CRC(565eeebb) SHA1(762844b59b2fcf529a26ad3dde8282415db926b3) )
 ROM_END
 
+// 4-player 2v2 variant, built on the Japan 970625 (mshvsfj2) program for the full roster incl.
+// Norimaro (native on JP; euro removed his select-cell). P3/P4 routing uses the fixed +0x00
+// on-field gate (FF4000/FF4400) which is base-independent -- the old +0x79 turbo was NOT a
+// euro/JP difference, it was the wrong (pose-coupled) offset on both.
+ROM_START( mshvsf2v2 )
+	ROM_REGION( CODE_SIZE, "maincpu", 0 ) // 68000 code
+	// mvsj2v2.03g = JP mvsj.03g + select-hook (JSR to secret handlers in .10b), CPS2-encrypted.
+	ROM_LOAD16_WORD_SWAP( "mvsj2v2.03g", 0x000000, 0x80000, CRC(634ff285) SHA1(9b146217b980a942b306f60b9ed8268db38a18cb) )
+	ROM_LOAD16_WORD_SWAP( "mvsj.04g", 0x080000, 0x80000, CRC(c921825f) SHA1(471e44268cebba631b81f131bf31e27b8a28c548) )
+	ROM_LOAD16_WORD_SWAP( "mvs.05a",  0x100000, 0x80000, CRC(1a5de0cb) SHA1(738a27f83704c208d36d73bf766d861ef2d51a89) )
+	ROM_LOAD16_WORD_SWAP( "mvs.06a",  0x180000, 0x80000, CRC(959f3030) SHA1(fbbaa915324815246738f3426232e623f039ce26) )
+	ROM_LOAD16_WORD_SWAP( "mvs.07b",  0x200000, 0x80000, CRC(7f915bdb) SHA1(683da09c5ba55e31b59aa95a8e13c45dc574ab3c) )
+	ROM_LOAD16_WORD_SWAP( "mvs.08a",  0x280000, 0x80000, CRC(c2813884) SHA1(49e5d4bc48f90c8146cb6aafb9240aff0119f1a7) )
+	ROM_LOAD16_WORD_SWAP( "mvs.09b",  0x300000, 0x80000, CRC(3ba08818) SHA1(9ab132a3cac55fcccebe6c99b6fb0ba1305f8f6e) )
+	// mvs2v2.10b = mvs.10b + the four secret-select handlers in its free space (plaintext, >enc range).
+	ROM_LOAD16_WORD_SWAP( "mvs2v2.10b", 0x380000, 0x80000, CRC(807c5efc) SHA1(dbe09ed38b6dbf823786c597be774e809fd9095f) )
+
+	ROM_REGION( 0x2000000, "gfx", 0 )
+	ROM_LOAD64_WORD( "mvs.13m",   0x0000000, 0x400000, CRC(29b05fd9) SHA1(e8fdb1ee5515a560eb4256ae4fd99bb1192e1a87) )
+	ROM_LOAD64_WORD( "mvs.15m",   0x0000002, 0x400000, CRC(faddccf1) SHA1(4ed03ea91883a0413325f57edcc1614120b5922c) )
+	ROM_LOAD64_WORD( "mvs.17m",   0x0000004, 0x400000, CRC(97aaf4c7) SHA1(6a054921cc14fe080cb3f62c391f8ae3cc7e8ba9) )
+	ROM_LOAD64_WORD( "mvs.19m",   0x0000006, 0x400000, CRC(cb70e915) SHA1(da4d2480d348ac6dfd01256a88f4f3db8357ae46) )
+	ROM_LOAD64_WORD( "mvs.14m",   0x1000000, 0x400000, CRC(b3b1972d) SHA1(0f2c3fb7de014181ee481ec35d0578b2c116c2dc) )
+	ROM_LOAD64_WORD( "mvs.16m",   0x1000002, 0x400000, CRC(08aadb5d) SHA1(3a2c222eca3e7df80ce69951b3db6442312751a4) )
+	ROM_LOAD64_WORD( "mvs.18m",   0x1000004, 0x400000, CRC(c1228b35) SHA1(7afdfb552888c79d0fbb30242b3d917b87fad57a) )
+	ROM_LOAD64_WORD( "mvs.20m",   0x1000006, 0x400000, CRC(366cc6c2) SHA1(6f2a789087c8e404c5227b927fa8328c03593243) )
+
+	ROM_REGION( QSOUND_SIZE, "audiocpu", 0 ) // 64k for the audio CPU (+banks)
+	ROM_LOAD( "mvs.01",   0x00000, 0x08000, CRC(68252324) SHA1(138ef320ef27956b2ab5591d49a1315b7b0a194c) )
+	ROM_CONTINUE(         0x10000, 0x18000 )
+	ROM_LOAD( "mvs.02",   0x28000, 0x20000, CRC(b34e773d) SHA1(3bcf44bf06c35814cff29d244142db7abe05bd39) )
+
+	ROM_REGION( 0x800000, "qsound", 0 ) // QSound samples
+	ROM_LOAD16_WORD_SWAP( "mvs.11m",   0x000000, 0x400000, CRC(86219770) SHA1(4e5b68d382a5aa37f8b0b6434c53a2b95f5f9a4d) )
+	ROM_LOAD16_WORD_SWAP( "mvs.12m",   0x400000, 0x400000, CRC(f2fd7f68) SHA1(28a30d55d3eaf963006c7cbe7c288099cd3ba536) )
+
+	ROM_REGION( 0x20, "key", 0 )
+	ROM_LOAD( "mshvsfj.key",  0x000000, 0x000014, CRC(565eeebb) SHA1(762844b59b2fcf529a26ad3dde8282415db926b3) )
+ROM_END
+
 ROM_START( mshvsfj2 )
 	ROM_REGION( CODE_SIZE, "maincpu", 0 ) // 68000 code
 	ROM_LOAD16_WORD_SWAP( "mvsj.03g", 0x000000, 0x80000, CRC(fdfa7e26) SHA1(e9fb93249e48e1bb7c769c3ce674dd4be404574f) )
@@ -11284,13 +11324,15 @@ void cps2_state::init_vs4p(uint32_t gate1, uint32_t gate2)
 // Verified: tag routine @0x010250 exchanges FF4000<->FF4800 (team 1) and FF4400<->FF4C00 (team 2).
 void cps2_state::init_xmvsf_4p()  { init_vs4p(0xff4220, 0xff4620); }
 
-// Verified live (probe22, 14/14 both teams). mshvsf does NOT reuse xmvsf's layout: its fighter
-// structs are an array at FF3800 stride 0x400 (its code computes FF3800 + index*0x400 from a slot
-// index at +0x94), and xmvsf's +0x220 on-point field has no counterpart -- FF3A20/FF3E20 never
-// move on a tag. Found by RAM-differencing scripted tags (probe23) rather than by porting xmvsf's
-// offsets. Reads 0 with the starter in and 3 with the partner in, so it is a state field rather
-// than a 0/1 index; the mux only tests != 0, which the game confirms gates correctly both ways.
-void cps2_state::init_mshvsf_4p() { init_vs4p(0xff4079, 0xff4479); }
+// mshvsf uses PERMANENT per-character slots (array at FF3800 stride 0x400; char-id at slot+0x53),
+// NOT xmvsf's data-swap. Team1 = starter FF3800 (P1) + partner FF4000 (P3); team2 = FF3C00 (P2) +
+// FF4400 (P4). GATE = partner slot +0x00, the fighter's ON-FIELD flag: 0 while benched/off-field,
+// 1 while on point. Movement-proven stable (probe100: 100% both states through neutral AND motion).
+// NOTE the earlier +0x79 gate (FF4079/FF4479) was WRONG: it is a pose-coupled state byte that
+// toggles 0<->nonzero EVERY frame when a pad drives an animation (e.g. holding down), so the mux
+// flipped P1<->P3 per frame = "turbo"/stutter input. The old probe22 RAM-diff only sampled two
+// FROZEN configs and never caught the per-frame oscillation. +0x00 is decoupled from animation.
+void cps2_state::init_mshvsf_4p() { init_vs4p(0xff4000, 0xff4400); }
 
 // Verified live (probe22, 14/14 both teams). mvsc indexes its fighter structs exactly like mshvsf
 // -- both read a slot index from +0x94 and compute base + index*0x400 (mvsc base FF3000, mshvsf
@@ -13108,12 +13150,13 @@ GAME( 1997, vsavj,      vsav,     cps2,     cps2_2p6b, cps2_state, init_cps2,   
 GAME( 1997, vsava,      vsav,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Vampire Savior: The Lord of Vampire (Asia 970519)",                             MACHINE_SUPPORTS_SAVE )
 GAME( 1997, vsavh,      vsav,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Vampire Savior: The Lord of Vampire (Hispanic 970519)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1997, vsavb,      vsav,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Vampire Savior: The Lord of Vampire (Brazil 970519)",                           MACHINE_SUPPORTS_SAVE )
-GAME( 1997, mshvsf,     0,        cps2_4p,  cps2_4p6b, cps2_state, init_mshvsf_4p, ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Europe 970625)",                        MACHINE_SUPPORTS_SAVE )
+GAME( 1997, mshvsf,     0,        cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Europe 970625)",                        MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfu,    mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (USA 970827)",                           MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfu1,   mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (USA 970625)",                           MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfj,    mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Japan 970707)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfj1,   mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Japan 970702)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfj2,   mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Japan 970625)",                         MACHINE_SUPPORTS_SAVE )
+GAME( 1997, mshvsf2v2,  mshvsf,   cps2_4p_43, cps2_4p6b, cps2_state, init_mshvsf_4p, ROT0, "TORNOTLUKIN", "Marvel Super Heroes Vs. Street Fighter 2v2",                              MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfh,    mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Hispanic 970625)",                      MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfa,    mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Asia 970625)",                          MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfa1,   mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Asia 970620)",                          MACHINE_SUPPORTS_SAVE )
