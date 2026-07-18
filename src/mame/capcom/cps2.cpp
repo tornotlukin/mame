@@ -1397,9 +1397,14 @@ void cps2_state::cps2_map(address_map &map)
 // first time a human fighter polls input (attract fighters are CPU-driven and never hit it).
 //
 // MVSC 4-LIVE COSMETIC STATE (for the C++ port of the mode; all user-verified in Lua):
-//   * 1P/2P marker arrows: pool objects in FF8000-FFDFxx with handler ptr +0x34 in
-//     {0x86EF0, 0x86F08}; zeroing the object's +0x04 word (per frame, rescan the pool
-//     periodically for respawns) removes the arrows with no side effects.
+//   * 1P/2P OVER-HEAD marker arrows (Duo-Mode only): permanent pool objects in FF8000-FFDFxx
+//     with handler ptr +0x34 in {0x86EF0, 0x86F08}; visibility = object +0x04. FLICKER-FREE
+//     removal (user-verified) = a WRITE-TAP on each marker's +0x04 that forces 0 (returns 0),
+//     so the enable value never lands -> the arrow never draws. Rescan the pool periodically
+//     to tap respawns. Do NOT touch the OFF-SCREEN LOCATOR arrow (bottom-of-screen, points to
+//     an out-of-view opponent on super-jump) -- it is a DIFFERENT handler and is desirable.
+//     Driver port: space.install_write_tap() on the marker +0x04, same as the Lua reference.
+//     (A per-frame zero of +0x04 also works but flickers on the KO re-enable; use the tap.)
 //   * duo bg effect: video staging FF443E committed to reg 0x804166, gated by FF4445/FF4439 --
 //     clear the GATES to restore the stage backdrop (writing the staged VALUE blanks the layer).
 //   * duo timer bar: starves when the singleton duo timers FF4034/FF4036 are zero.
