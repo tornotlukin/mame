@@ -385,22 +385,22 @@ ROM_END
 // layout. Self-contained (parent 0) so it ships in the curated Modalicious build alone.
 ROM_START( pac4eva )
 	ROM_REGION( 0x10000, "maincpu", 0 )
-	ROM_LOAD( "jr.pac-man_8d_11-9-83.8d",    0x0000, 0x2000, CRC(e3fa972e) SHA1(5ea34621213c649ca2848ab31aab2cbe751723d4) )
-	ROM_LOAD( "jr.pac-man_8e_11-9-83.8e",    0x2000, 0x2000, CRC(ec889e94) SHA1(8294e9e79f8fd19a419431fa690e6ac4a1302f58) )
-	ROM_LOAD( "jr.pac-man_8h_11-9-83.8h",    0x8000, 0x2000, CRC(35f1fc6e) SHA1(b84b34560b9aae18b24274712b052283faa01730) )
-	ROM_LOAD( "jr.pac-man_8j_11-9-83.8j",    0xa000, 0x2000, CRC(9737099e) SHA1(07d912a61824323c8fc1b8bd0da89172d4f70b91) )
-	ROM_LOAD( "jr.pac-man_8k_11-9-83.8k",    0xc000, 0x2000, CRC(5252dd97) SHA1(18bd4d5381656120e4242811006c20776774de4d) )
-	ROM_LOAD( "pac4eva.6x",                  0x6000, 0x2000, CRC(d8f49994) SHA1(0631457264ff7f8d5fb1edc2c0211992a67c73e6) ) // expansion ROM 2 (engine modules; plaintext)
-	ROM_LOAD( "pac4eva.8x",                  0xe000, 0x2000, CRC(d8f49994) SHA1(0631457264ff7f8d5fb1edc2c0211992a67c73e6) ) // expansion ROM (plaintext; decrypt table zero over 0xe000+)
+	ROM_LOAD( "jr.pac-man_8d_11-9-83.8d",    0x0000, 0x2000, CRC(7799a7e6) SHA1(daa18744dd12743a5adc8cc43f780ae54cd14b3c) )
+	ROM_LOAD( "jr.pac-man_8e_11-9-83.8e",    0x2000, 0x2000, CRC(40cdad13) SHA1(9c55443f7207f97aee24e55c1ca0646367ccbefc) )
+	ROM_LOAD( "jr.pac-man_8h_11-9-83.8h",    0x8000, 0x2000, CRC(540a6039) SHA1(b061ca2ab893ebacdb67dd2646a8053be7e33373) )
+	ROM_LOAD( "jr.pac-man_8j_11-9-83.8j",    0xa000, 0x2000, CRC(e788dfe2) SHA1(fa705b1ff20846e876b83fb7e1182182b4043759) )
+	ROM_LOAD( "jr.pac-man_8k_11-9-83.8k",    0xc000, 0x2000, CRC(86516ff7) SHA1(df063ea4f23efdb7a311dece0068165aa077545f) )
+	ROM_LOAD( "pac4eva.6x",                  0x6000, 0x2000, CRC(7e680231) SHA1(8551e0f4e0fe5faab00a122333d370e8d526729d) ) // expansion ROM 2 (engine modules; plaintext)
+	ROM_LOAD( "pac4eva.8x",                  0xe000, 0x2000, CRC(adfbf49c) SHA1(b8315d3a743765b9f567c287dfb3f5ff23f2a85c) ) // expansion ROM (plaintext; decrypt table zero over 0xe000+)
 
 	ROM_REGION( 0x6000, "gfx1", 0 )   // L1 layout = tiles 0x2000 + sprites 0x4000 (256)
-	ROM_LOAD( "jr.pac-man_2c_11-9-83.2c",    0x0000, 0x2000, CRC(0527ff9b) SHA1(37fe3176b0d125b7d629e108e7ebdc1196e4a132) ) /* tiles (512) */
-	ROM_LOAD( "jr.pac-man_2e_11-9-83.2e",    0x2000, 0x4000, CRC(73477193) SHA1(f00a488958ea0438642d345693787bdf771219ad) ) /* sprites (256; stock file 0x2000 -> upper half zero-filled) */
+	ROM_LOAD( "jr.pac-man_2c_11-9-83.2c",    0x0000, 0x2000, CRC(a624f5cb) SHA1(90809d9d30df183461c0c40f2da941a21fec6d5c) ) /* tiles (512) */
+	ROM_LOAD( "jr.pac-man_2e_11-9-83.2e",    0x2000, 0x4000, CRC(a9d761f8) SHA1(20090c5a98db98e5cc768f3c886cfff864dfcb64) ) /* sprites (256) */
 
 	ROM_REGION( 0x0120, "proms", 0 )
 	ROM_LOAD_NIB_LOW ( "a290-27axv-bxhd.9e", 0x0000, 0x0100, CRC(029d35c4) SHA1(d9aa2dc442e9ac36cf3c346b9fb1aa745eaf3cb8) ) /* color palette (low bits) */
 	ROM_LOAD_NIB_HIGH( "a290-27axv-cxhd.9f", 0x0000, 0x0100, CRC(eee34a79) SHA1(7561f8ccab2af85c111af6a02af6986eb67503e5) ) /* color palette (high bits) */
-	ROM_LOAD( "a290-27axv-axhd.9p",          0x0020, 0x0100, CRC(9f6ea9d8) SHA1(62cf15513934d34641433c891a7f73bef82e2fb1) ) /* color lookup table */
+	ROM_LOAD( "a290-27axv-axhd.9p",          0x0020, 0x0100, CRC(2313697c) SHA1(e52560acd0d83ee8121c0b8c4981fc26e0f51b66) ) /* color lookup table */
 
 	ROM_REGION( 0x0200, "namco", 0 )
 	ROM_LOAD( "a290-27axv-dxhd.7p",          0x0000, 0x0100, CRC(a9cc86bf) SHA1(bbcec0570aeceb582ff8238a4bc8546a23430081) ) /* waveform */
