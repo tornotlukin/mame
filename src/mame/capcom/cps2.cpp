@@ -662,7 +662,6 @@ public:
 
 	void cps2(machine_config &config) ATTR_COLD;
 	void cps2comm(machine_config &config) ATTR_COLD;
-	void cps2_4p(machine_config &config) ATTR_COLD;   // 4-player 2v2 tag mod (VS trilogy) + widescreen (mvscduo)
 	void cps2_4p_43(machine_config &config) ATTR_COLD; // 4-player, STOCK 4:3 (2v2 variants; NO widescreen)
 	void cps2_4p_duo(machine_config &config) ATTR_COLD; // 4-player 4-live DUO + widescreen (mvscduo standalone)
 	void gigaman2(machine_config &config) ATTR_COLD;
@@ -679,7 +678,6 @@ public:
 	void init_vs4p(uint32_t gate1, uint32_t gate2) ATTR_COLD;
 	void init_xmvsf_4p() ATTR_COLD;
 	void init_mshvsf_4p() ATTR_COLD;
-	void init_mvsc_4p() ATTR_COLD;
 	void init_mvsc2v2_4p() ATTR_COLD;
 	void init_mvscduo() ATTR_COLD;
 
@@ -2035,25 +2033,11 @@ void cps2_state::cps2(machine_config &config)
 	m_qsound->add_route(1, "speaker", 1.0, 1);
 }
 
-void cps2_state::cps2_4p(machine_config &config)
-{
-	cps2(config);
-	// Adds the P3/P4 registers at 0x804050/0x804052. Stock CPS2 behaviour is otherwise untouched,
-	// so a 4p-enabled set still runs its unpatched program ROM exactly as before.
-	m_maincpu->set_addrmap(AS_PROGRAM, &cps2_state::cps2_4p_map);
-
-	// WIDESCREEN EXPERIMENT (4p sets only): open the visible window from the stock 384px
-	// (64..447 of the 512px raster) to 480px. The scroll layers are wider than the screen in
-	// VRAM (scroll2 is 1024px), so the margins can contain real playfield; the open questions
-	// are game-side sprite culling and the camera clamp at the design width. Feasibility look
-	// for the 4-live mode -- revert to stock timings if the margins are junk.
-	// (set_visible_area after set_raw crashed at boot; re-issue set_raw with a wider window.)
-	// Full 512px raster -- the widest the CPS-A/B composes; user-approved after the 480px test.
-	m_screen->set_raw(CPS_PIXEL_CLOCK, CPS_HTOTAL, 0, CPS_HTOTAL, CPS_VTOTAL, CPS_VBEND, CPS_VBSTART);
-	// Present at 16:9 so pixels keep their stock shape: 512/384 x (4:3) = 16:9. Without this
-	// the wider image gets squeezed into the stock 4:3 window and looks horizontally squished.
-	m_screen->set_physical_aspect(16, 9);
-}
+// NOTE: the old shared `cps2_4p` config (4-player ports + a 512px widescreen raster) has been
+// REMOVED. It was the widescreen feasibility experiment and its only remaining user was the STOCK
+// mvsc parent, which had no business being widescreen or 4-player. The two survivors below are
+// explicit about their screen: cps2_4p_43 (2v2 variants, stock 4:3) and cps2_4p_duo (mvscduo,
+// widescreen). Per the project's hard build rule: WIDESCREEN = mvscduo ONLY.
 
 void cps2_state::cps2_4p_43(machine_config &config)
 {
@@ -11421,16 +11405,17 @@ void cps2_state::init_xmvsf_4p()  { init_vs4p(0xff4220, 0xff4620); }
 // FROZEN configs and never caught the per-frame oscillation. +0x00 is decoupled from animation.
 void cps2_state::init_mshvsf_4p() { init_vs4p(0xff4000, 0xff4400); }
 
-// Verified live (probe22, 14/14 both teams). mvsc indexes its fighter structs exactly like mshvsf
-// -- both read a slot index from +0x94 and compute base + index*0x400 (mvsc base FF3000, mshvsf
-// FF3800) -- so mshvsf's slot2+0x79 / slot3+0x79 gates carried over directly. That worked only
-// because the shared code shape was confirmed in mvsc's own ROM first; porting xmvsf's layout to
-// mshvsf on the same hunch failed completely. Gate reads 3 with the partner in, same as mshvsf.
-void cps2_state::init_mvsc_4p()   { init_vs4p(0xff3879, 0xff3c79); }
-
-// mvsc2v2 (2v2 variant): same fix as mshvsf -- the +0x79 gate above is pose-coupled (per-frame
-// turbo). Use the partner slot's +0x00 ON-FIELD flag instead. mvsc partner slots = FF3800/FF3C00
-// (base FF3000, the two on-point slots), so gate = FF3800 / FF3C00. (Verify live like probe100.)
+// mvsc structure (verified live, probe22): mvsc indexes its fighter structs exactly like mshvsf --
+// both read a slot index from +0x94 and compute base + index*0x400 (mvsc base FF3000, mshvsf
+// FF3800). Confirming that shared code shape in mvsc's OWN ROM first is what made the carry-over
+// valid; porting xmvsf's layout to mshvsf on the same hunch failed completely.
+//
+// GATE = partner slot +0x00, the ON-FIELD flag. mvsc partner slots are FF3800/FF3C00.
+// An earlier init_mvsc_4p used slot +0x79 (FF3879/FF3C79) and has been REMOVED: that byte is
+// pose-coupled and toggles 0<->nonzero every frame while a pad drives an animation, so the mux
+// flipped P1<->P3 per frame = "turbo"/stutter input. Identical failure to mshvsf's -- see the
+// init_mshvsf_4p note. The old probe22 RAM-diff only sampled two FROZEN configs and never caught
+// the per-frame oscillation.
 void cps2_state::init_mvsc2v2_4p() { init_vs4p(0xff3800, 0xff3c00); }
 
 // mvscduo (widescreen 4-LIVE Duo variant): all P3/P4 routing is baked into the program ROM by the
@@ -13273,7 +13258,7 @@ GAME( 1997, sgemfh,     sgemf,    cps2,     cps2_2p3b, cps2_state, init_cps2,   
 GAME( 1997, vhunt2,     0,        cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Vampire Hunter 2: Darkstalkers Revenge (Japan 970929)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1997, vhunt2r1,   vhunt2,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Vampire Hunter 2: Darkstalkers Revenge (Japan 970913)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1997, vsav2,      0,        cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Vampire Savior 2: The Lord of Vampire (Japan 970913)",                          MACHINE_SUPPORTS_SAVE )
-GAME( 1998, mvsc,       0,        cps2_4p,  cps2_4p6b, cps2_state, init_mvsc_4p,  ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Europe 980123)",                      MACHINE_SUPPORTS_SAVE )
+GAME( 1998, mvsc,       0,        cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Europe 980123)",                      MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscr1,     mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Europe 980112)",                      MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscu,      mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (USA 980123)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvsc2v2,    mvsc,     cps2_4p_43, cps2_4p6b, cps2_state, init_mvsc2v2_4p, ROT0, "TORNOTLUKIN", "Marvel Vs. Capcom: Clash of Super Heroes 2v2",                            MACHINE_SUPPORTS_SAVE )
