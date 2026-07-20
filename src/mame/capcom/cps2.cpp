@@ -657,6 +657,7 @@ public:
 		, m_region_key(*this, "key")
 		, m_comm(*this, "comm")
 		, m_digitalvol(*this, "DIGITALVOL")
+		, m_vs4p_playmode(*this, "PLAYMODE")
 		, m_paddle(*this, "PADDLE%u", 1U)
 	{ }
 
@@ -745,6 +746,9 @@ private:
 	optional_device<cps2_comm_device> m_comm;
 
 	optional_ioport m_digitalvol;
+	// 1v1/2v2 selector. Present only on sets using cps2_4p6b_mode / cps2_4p6b_mode2v2. Absent
+	// everywhere else (including mvscduo), where read_safe(0) yields 1v1 and the mux stays inert.
+	optional_ioport m_vs4p_playmode;
 	optional_ioport_array<2> m_paddle;
 
 	// video-related
@@ -1476,6 +1480,10 @@ void cps2_state::cps2_map(address_map &map)
 // below, which the C++ port of the 4-live mode should disable/bypass on that set.
 bool cps2_state::vs4p_partner_on_point(int team)
 {
+	// "Play Mode" = 1v1, or no selector on this set (mvscduo) -> P1/P2 pass through untouched.
+	// Same inert path as an unmapped gate, so a 1v1 launch is bit-for-bit the stock game.
+	if (!(m_vs4p_playmode.read_safe(0) & 0x01))
+		return false;
 	if (!m_vs4p_gate[team])
 		return false;                       // set not mapped yet -> stay stock
 	return m_maincpu->space(AS_PROGRAM).read_byte(m_vs4p_gate[team]) != 0;
@@ -1894,6 +1902,89 @@ static INPUT_PORTS_START( cps2_4p6b )
 	PORT_BIT( 0xf800, IP_ACTIVE_LOW, IPT_UNUSED )
 INPUT_PORTS_END
 
+// ---------------------------------------------------------------------------------------------
+// 1v1 / 2v2 SELECTOR
+//
+// PORT_CONFNAME, not PORT_DIPNAME. This is read by the DRIVER (vs4p_partner_on_point), never by
+// the game program: the VS titles have no concept of a third or fourth player, so an emulated PCB
+// dipswitch would be inert -- there is no ROM code to branch on it. The entire 2v2 mod lives in
+// the driver, so the switch belongs there too.
+//
+// Two variants, differing ONLY in default:
+//   cps2_4p6b_mode     -> 1v1. For the STOCK Capcom sets, where an untouched launch must be
+//                         indistinguishable from unmodified MAME. 2v2 is opt-in.
+//   cps2_4p6b_mode2v2  -> 2v2. For the modded *2v2 sets, whose whole purpose is 4-player; they
+//                         come up ready to play, with 1v1 as the fallback.
+// ---------------------------------------------------------------------------------------------
+static INPUT_PORTS_START( cps2_4p6b_mode )
+	PORT_INCLUDE(cps2_4p6b)
+
+	PORT_START("PLAYMODE")
+	PORT_CONFNAME( 0x01, 0x00, "Play Mode" )
+	PORT_CONFSETTING(    0x00, "1v1 (stock, 2 players)" )
+	PORT_CONFSETTING(    0x01, "2v2 (4 players)" )
+	PORT_BIT( 0xfffe, IP_ACTIVE_LOW, IPT_UNUSED )
+INPUT_PORTS_END
+
+static INPUT_PORTS_START( cps2_4p6b_mode2v2 )
+	PORT_INCLUDE(cps2_4p6b)
+
+	PORT_START("PLAYMODE")
+	PORT_CONFNAME( 0x01, 0x01, "Play Mode" )
+	PORT_CONFSETTING(    0x00, "1v1 (stock, 2 players)" )
+	PORT_CONFSETTING(    0x01, "2v2 (4 players)" )
+	PORT_BIT( 0xfffe, IP_ACTIVE_LOW, IPT_UNUSED )
+INPUT_PORTS_END
+
+// ---------------------------------------------------------------------------------------------
+// mvscduo ports -- DELIBERATELY A STANDALONE COPY, NOT PORT_INCLUDE(cps2_4p6b).
+//
+// INSULATION. duo is 4-LIVE: all four fighters are on the field at once, its P3/P4 routing is
+// baked into the program ROM (STUB v3 @0x13698 reads 804050/804052 directly), and init_mvscduo
+// leaves m_vs4p_gate at {0,0} so the driver mux never runs. It therefore needs the P3/P4 ports
+// but must NEVER inherit anything the 2v2 work adds -- a selector here would be a menu entry that
+// does nothing, since duo has no 1v1 mode to switch to.
+//
+// An earlier attempt added the selector to the shared cps2_4p6b and it leaked straight into duo.
+// Copying the port definitions makes that class of accident structurally impossible. The cost is
+// ~24 duplicated lines; cps2_2p6b is still shared because that is genuine CPS2 base hardware, not
+// part of this mod's surface.
+//
+// ⚠ STILL SHARED WITH THE 2v2 SETS: cps2_4p_map (creates 804050/804052). duo's program ROM
+// HARDCODES those two addresses -- moving them silently breaks the baked stub. Change with care.
+// ---------------------------------------------------------------------------------------------
+static INPUT_PORTS_START( cps2_4p6b_duo )
+	PORT_INCLUDE(cps2_2p6b)
+
+	PORT_START("IN_P3")
+	PORT_BIT( 0x0001, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT ) PORT_8WAY PORT_PLAYER(3)
+	PORT_BIT( 0x0002, IP_ACTIVE_LOW, IPT_JOYSTICK_LEFT ) PORT_8WAY PORT_PLAYER(3)
+	PORT_BIT( 0x0004, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_8WAY PORT_PLAYER(3)
+	PORT_BIT( 0x0008, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_8WAY PORT_PLAYER(3)
+	PORT_BIT( 0x0010, IP_ACTIVE_LOW, IPT_BUTTON1 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0020, IP_ACTIVE_LOW, IPT_BUTTON2 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0040, IP_ACTIVE_LOW, IPT_BUTTON3 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0080, IP_ACTIVE_LOW, IPT_UNUSED )
+	PORT_BIT( 0x0100, IP_ACTIVE_LOW, IPT_BUTTON4 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0200, IP_ACTIVE_LOW, IPT_BUTTON5 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0400, IP_ACTIVE_LOW, IPT_BUTTON6 ) PORT_PLAYER(3)
+	PORT_BIT( 0xf800, IP_ACTIVE_LOW, IPT_UNUSED )
+
+	PORT_START("IN_P4")
+	PORT_BIT( 0x0001, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT ) PORT_8WAY PORT_PLAYER(4)
+	PORT_BIT( 0x0002, IP_ACTIVE_LOW, IPT_JOYSTICK_LEFT ) PORT_8WAY PORT_PLAYER(4)
+	PORT_BIT( 0x0004, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_8WAY PORT_PLAYER(4)
+	PORT_BIT( 0x0008, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_8WAY PORT_PLAYER(4)
+	PORT_BIT( 0x0010, IP_ACTIVE_LOW, IPT_BUTTON1 ) PORT_PLAYER(4)
+	PORT_BIT( 0x0020, IP_ACTIVE_LOW, IPT_BUTTON2 ) PORT_PLAYER(4)
+	PORT_BIT( 0x0040, IP_ACTIVE_LOW, IPT_BUTTON3 ) PORT_PLAYER(4)
+	PORT_BIT( 0x0080, IP_ACTIVE_LOW, IPT_UNUSED )
+	PORT_BIT( 0x0100, IP_ACTIVE_LOW, IPT_BUTTON4 ) PORT_PLAYER(4)
+	PORT_BIT( 0x0200, IP_ACTIVE_LOW, IPT_BUTTON5 ) PORT_PLAYER(4)
+	PORT_BIT( 0x0400, IP_ACTIVE_LOW, IPT_BUTTON6 ) PORT_PLAYER(4)
+	PORT_BIT( 0xf800, IP_ACTIVE_LOW, IPT_UNUSED )
+INPUT_PORTS_END
+
 // 2 players, 6 buttons, and 1 ticket dispenser (2 rows of 3 buttons)
 static INPUT_PORTS_START( cps2_2p6bt )
 	PORT_INCLUDE(cps2_2p6b)
@@ -2050,7 +2141,8 @@ void cps2_state::cps2_4p_43(machine_config &config)
 {
 	cps2(config);
 	// 4-player input (P3/P4 registers at 0x804050/0x804052) with the STOCK 4:3 screen. Used by
-	// the 2v2 tag variants (xmvsf2v2 / mshvsf2v2 / mvsc2v2) -- NO widescreen (that is mvscduo-only).
+	// every 2v2-capable set (stock xmvsf/mshvsf/mvsc + mshvsf2v2/mvsc2v2) -- NO widescreen, which
+	// is mvscduo-only and lives in cps2_4p_duo.
 	m_maincpu->set_addrmap(AS_PROGRAM, &cps2_state::cps2_4p_map);
 }
 
@@ -10779,40 +10871,6 @@ ROM_START( xmvsf )
 	ROM_LOAD( "xmvsf.key",    0x000000, 0x000014, CRC(d5c07311) SHA1(1b401ffc241436c4869486c174774b67e3bf3df8) )
 ROM_END
 
-// TORNOTLUKIN 4-player 2v2 tag variant -- same ROMs as parent xmvsf; the 2v2 is a driver mod.
-ROM_START( xmvsf2v2 )
-	ROM_REGION( CODE_SIZE, "maincpu", 0 ) // 68000 code
-	ROM_LOAD16_WORD_SWAP( "xvse.03f", 0x000000, 0x80000, CRC(db06413f) SHA1(c6d8aa1e43fc541e5b4e938258f27ab9ee30ca33) )
-	ROM_LOAD16_WORD_SWAP( "xvse.04f", 0x080000, 0x80000, CRC(ef015aef) SHA1(d3504cb8c38f720b1f4528157266db60c8c6c075) )
-	ROM_LOAD16_WORD_SWAP( "xvs.05a",  0x100000, 0x80000, CRC(7db6025d) SHA1(2d74f48f83f45359bfaca28ab686625766af12ee) )
-	ROM_LOAD16_WORD_SWAP( "xvs.06a",  0x180000, 0x80000, CRC(e8e2c75c) SHA1(929408cb5d98e95cec75ea58e4701b0cbdbcd016) )
-	ROM_LOAD16_WORD_SWAP( "xvs.07",   0x200000, 0x80000, CRC(08f0abed) SHA1(ef16c376232dba63b0b9bc3aa0640f9001ccb68a) )
-	ROM_LOAD16_WORD_SWAP( "xvs.08",   0x280000, 0x80000, CRC(81929675) SHA1(19cf7afbc1daaefec40195e40ba74970f3906a1c) )
-	ROM_LOAD16_WORD_SWAP( "xvs.09",   0x300000, 0x80000, CRC(9641f36b) SHA1(dcba3482d1ba37ccfb30d402793ee063c6621aed) )
-
-	ROM_REGION( 0x2000000, "gfx", 0 )
-	ROM_LOAD64_WORD( "xvs.13m",   0x0000000, 0x400000, CRC(f6684efd) SHA1(c0a2f3a9e82ab8b084a500aec71ac633e947328c) )
-	ROM_LOAD64_WORD( "xvs.15m",   0x0000002, 0x400000, CRC(29109221) SHA1(898b8f678fd03c462ce0d8eb7fb3441ef601085b) )
-	ROM_LOAD64_WORD( "xvs.17m",   0x0000004, 0x400000, CRC(92db3474) SHA1(7b6f4c8ebfdac167b25f35029068b6253c141fe6) )
-	ROM_LOAD64_WORD( "xvs.19m",   0x0000006, 0x400000, CRC(3733473c) SHA1(6579da7145c95b3ad00844a5fc8c2e22c23365e2) )
-	ROM_LOAD64_WORD( "xvs.14m",   0x1000000, 0x400000, CRC(bcac2e41) SHA1(838ff24f7e8543a787a55a5d592c9517ce3b8b93) )
-	ROM_LOAD64_WORD( "xvs.16m",   0x1000002, 0x400000, CRC(ea04a272) SHA1(cd7c79037b5b4a39bef5156433e984dc4dc2c081) )
-	ROM_LOAD64_WORD( "xvs.18m",   0x1000004, 0x400000, CRC(b0def86a) SHA1(da3a6705ea7050fc5c2c10d33400ed67be9f455d) )
-	ROM_LOAD64_WORD( "xvs.20m",   0x1000006, 0x400000, CRC(4b40ff9f) SHA1(9a981d442132efff09a27408d74646ba357c7357) )
-
-	ROM_REGION( QSOUND_SIZE, "audiocpu", 0 ) // 64k for the audio CPU (+banks)
-	ROM_LOAD( "xvs.01",   0x00000, 0x08000, CRC(3999e93a) SHA1(fefcff8a9a5c83df7655a16187cf9ba3e7efbb25) )
-	ROM_CONTINUE(         0x10000, 0x18000 )
-	ROM_LOAD( "xvs.02",   0x28000, 0x20000, CRC(101bdee9) SHA1(75920e88bf46fcd33a7957777a1d799818ffb0d6) )
-
-	ROM_REGION( 0x400000, "qsound", 0 ) // QSound samples
-	ROM_LOAD16_WORD_SWAP( "xvs.11m",   0x000000, 0x200000, CRC(9cadcdbc) SHA1(64d3bd53b04daec84c9af4aa3ff010867b3d306d) )
-	ROM_LOAD16_WORD_SWAP( "xvs.12m",   0x200000, 0x200000, CRC(7b11e460) SHA1(a581c84acaaf0ce056841c15a6f36889e88be68d) )
-
-	ROM_REGION( 0x20, "key", 0 )
-	ROM_LOAD( "xmvsf.key",    0x000000, 0x000014, CRC(d5c07311) SHA1(1b401ffc241436c4869486c174774b67e3bf3df8) )
-ROM_END
-
 ROM_START( xmvsfr1 )
 	ROM_REGION( CODE_SIZE, "maincpu", 0 ) // 68000 code
 	ROM_LOAD16_WORD_SWAP( "xvse.03d", 0x000000, 0x80000, CRC(5ae5bd3b) SHA1(f687f018008cef24f86f53373c3f5547741a4c5b) )
@@ -13214,8 +13272,11 @@ GAME( 1996, megaman2a,  megaman2, cps2,     cps2_2p3b, cps2_state, init_cps2,   
 GAME( 1996, rockman2j,  megaman2, cps2,     cps2_2p3b, cps2_state, init_cps2,     ROT0,   "Capcom", "Rockman 2: The Power Fighters (Japan 960708)",                                  MACHINE_SUPPORTS_SAVE )
 GAME( 1996, megaman2h,  megaman2, cps2,     cps2_2p3b, cps2_state, init_cps2,     ROT0,   "Capcom", "Mega Man 2: The Power Fighters (Hispanic 960712)",                              MACHINE_SUPPORTS_SAVE )
 GAME( 1996, qndream,    0,        cps2,     qndream,   cps2_state, init_cps2,     ROT0,   "Capcom", "Quiz Nanairo Dreams: Nijiirochou no Kiseki (Japan 960826)",                     MACHINE_SUPPORTS_SAVE )
-GAME( 1996, xmvsf,      0,        cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (Europe 961004)",                                      MACHINE_SUPPORTS_SAVE )
-GAME( 1996, xmvsf2v2,   xmvsf,    cps2_4p_43, cps2_4p6b, cps2_state, init_xmvsf_4p, ROT0,  "TORNOTLUKIN", "X-Men Vs. Street Fighter 2v2",                                             MACHINE_SUPPORTS_SAVE )
+// 4-PLAYER 2v2 offered on the STOCK set via Machine Configuration -> "Play Mode" (default 1v1,
+// which is bit-for-bit stock). ROMs are unmodified Capcom dumps. There is no xmvsf2v2 companion
+// set: xmvsf needed no ROM patch at all (Akuma is reachable by the normal select code), so once
+// the stock entry carries the selector a separate set would be an exact duplicate.
+GAME( 1996, xmvsf,      0,        cps2_4p_43, cps2_4p6b_mode, cps2_state, init_xmvsf_4p, ROT0, "Capcom", "X-Men Vs. Street Fighter (Europe 961004)",                                      MACHINE_SUPPORTS_SAVE )
 GAME( 1996, xmvsfr1,    xmvsf,    cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (Europe 960910)",                                      MACHINE_SUPPORTS_SAVE )
 GAME( 1996, xmvsfu,     xmvsf,    cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (USA 961023)",                                         MACHINE_SUPPORTS_SAVE )
 GAME( 1996, xmvsfur1,   xmvsf,    cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (USA 961004)",                                         MACHINE_SUPPORTS_SAVE )
@@ -13240,13 +13301,17 @@ GAME( 1997, vsavj,      vsav,     cps2,     cps2_2p6b, cps2_state, init_cps2,   
 GAME( 1997, vsava,      vsav,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Vampire Savior: The Lord of Vampire (Asia 970519)",                             MACHINE_SUPPORTS_SAVE )
 GAME( 1997, vsavh,      vsav,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Vampire Savior: The Lord of Vampire (Hispanic 970519)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1997, vsavb,      vsav,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Vampire Savior: The Lord of Vampire (Brazil 970519)",                           MACHINE_SUPPORTS_SAVE )
-GAME( 1997, mshvsf,     0,        cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Europe 970625)",                        MACHINE_SUPPORTS_SAVE )
+// 4-PLAYER 2v2 via Machine Configuration -> "Play Mode" (default 1v1). Stock ROMs, standard
+// roster. mshvsf2v2 below is the same mod on patched ROMs that also unlock the secret characters.
+GAME( 1997, mshvsf,     0,        cps2_4p_43, cps2_4p6b_mode, cps2_state, init_mshvsf_4p, ROT0, "Capcom", "Marvel Super Heroes Vs. Street Fighter (Europe 970625)",                        MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfu,    mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (USA 970827)",                           MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfu1,   mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (USA 970625)",                           MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfj,    mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Japan 970707)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfj1,   mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Japan 970702)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfj2,   mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Japan 970625)",                         MACHINE_SUPPORTS_SAVE )
-GAME( 1997, mshvsf2v2,  mshvsf,   cps2_4p_43, cps2_4p6b, cps2_state, init_mshvsf_4p, ROT0, "TORNOTLUKIN", "Marvel Super Heroes Vs. Street Fighter 2v2",                              MACHINE_SUPPORTS_SAVE )
+// Same 2v2 mod as the stock mshvsf entry, on patched ROMs that also unlock the secret characters
+// (hold your own START on a base character). Defaults to 2v2; 1v1 still available in the menu.
+GAME( 1997, mshvsf2v2,  mshvsf,   cps2_4p_43, cps2_4p6b_mode2v2, cps2_state, init_mshvsf_4p, ROT0, "TORNOTLUKIN", "Marvel Super Heroes Vs. Street Fighter 2v2 (secret characters)",     MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfh,    mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Hispanic 970625)",                      MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfa,    mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Asia 970625)",                          MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfa1,   mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Asia 970620)",                          MACHINE_SUPPORTS_SAVE )
@@ -13265,11 +13330,18 @@ GAME( 1997, sgemfh,     sgemf,    cps2,     cps2_2p3b, cps2_state, init_cps2,   
 GAME( 1997, vhunt2,     0,        cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Vampire Hunter 2: Darkstalkers Revenge (Japan 970929)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1997, vhunt2r1,   vhunt2,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Vampire Hunter 2: Darkstalkers Revenge (Japan 970913)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1997, vsav2,      0,        cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Vampire Savior 2: The Lord of Vampire (Japan 970913)",                          MACHINE_SUPPORTS_SAVE )
-GAME( 1998, mvsc,       0,        cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Europe 980123)",                      MACHINE_SUPPORTS_SAVE )
+// 4-PLAYER 2v2 via Machine Configuration -> "Play Mode" (default 1v1). Stock ROMs, standard
+// roster. mvsc2v2 below is the same mod on patched ROMs with the full roster unlocked.
+GAME( 1998, mvsc,       0,        cps2_4p_43, cps2_4p6b_mode, cps2_state, init_mvsc2v2_4p, ROT0, "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Europe 980123)",                      MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscr1,     mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Europe 980112)",                      MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscu,      mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (USA 980123)",                         MACHINE_SUPPORTS_SAVE )
-GAME( 1998, mvsc2v2,    mvsc,     cps2_4p_43, cps2_4p6b, cps2_state, init_mvsc2v2_4p, ROT0, "TORNOTLUKIN", "Marvel Vs. Capcom: Clash of Super Heroes 2v2",                            MACHINE_SUPPORTS_SAVE )
-GAME( 1998, mvscduo,    mvsc,     cps2_4p_duo, cps2_4p6b, cps2_state, init_mvscduo, ROT0,  "TORNOTLUKIN", "Marvel Vs. Capcom: Clash of Super Heroes Duo (widescreen)",               MACHINE_SUPPORTS_SAVE )
+// Same 2v2 mod as the stock mvsc entry, on patched USA ROMs with every hidden character unlocked.
+// Defaults to 2v2; 1v1 still available in the menu.
+GAME( 1998, mvsc2v2,    mvsc,     cps2_4p_43, cps2_4p6b_mode2v2, cps2_state, init_mvsc2v2_4p, ROT0, "TORNOTLUKIN", "Marvel Vs. Capcom: Clash of Super Heroes 2v2 (all characters)",       MACHINE_SUPPORTS_SAVE )
+// 4-LIVE Duo: NOT a 2v2 tag mod and NOT selectable -- all four fighters are on the field at once,
+// always. Uses the insulated cps2_4p6b_duo ports (no "Play Mode" entry, since there is no 1v1 to
+// switch to) and routes P3/P4 from its own program ROM rather than the driver mux.
+GAME( 1998, mvscduo,    mvsc,     cps2_4p_duo, cps2_4p6b_duo, cps2_state, init_mvscduo, ROT0,  "TORNOTLUKIN", "Marvel Vs. Capcom: Clash of Super Heroes Duo (widescreen)",               MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscur1,    mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (USA 971222)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscj,      mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Japan 980123)",                       MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscjr1,    mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Japan 980112)",                       MACHINE_SUPPORTS_SAVE )
