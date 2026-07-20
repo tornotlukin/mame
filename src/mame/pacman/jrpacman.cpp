@@ -139,7 +139,10 @@ void jrpacman_state::main_map(address_map &map)
 {
 	map(0x0000, 0x3fff).rom();
 	map(0x4000, 0x47ff).ram().w(FUNC(jrpacman_state::jrpacman_videoram_w)).share("videoram");
-	map(0x4800, 0x4fef).ram();
+	map(0x4800, 0x4aff).ram();
+	map(0x4b00, 0x4b07).ram().share("spritext");   // pac-man-4ever: 2 extended (software) sprites (slots 8,9)
+	map(0x4b08, 0x4b11).ram().share("sprhi");      // pac-man-4ever: per-sprite high bank (code bit7) for 256-sprite set: [0..7]=hw sprites, [8..9]=extended
+	map(0x4b12, 0x4fef).ram();
 	map(0x4ff0, 0x4fff).ram().share("spriteram");
 	map(0x5000, 0x503f).portr("P1");
 	map(0x5000, 0x5007).w("latch1", FUNC(ls259_device::write_d0));
@@ -150,7 +153,12 @@ void jrpacman_state::main_map(address_map &map)
 	map(0x5080, 0x50bf).portr("DSW1");
 	map(0x5080, 0x5080).w(FUNC(jrpacman_state::jrpacman_scroll_w));
 	map(0x50c0, 0x50c0).w(m_watchdog, FUNC(watchdog_timer_device::reset_w));
+	// pac-man-4ever: extra simultaneous-player inputs (not on stock hardware)
+	map(0x5100, 0x5100).portr("P3");
+	map(0x5101, 0x5101).portr("P4");
+	map(0x6000, 0x7fff).rom();     // pac-man-4ever: expansion ROM 2 (engine modules; plaintext - decrypt table is zero here)
 	map(0x8000, 0xdfff).rom();
+	map(0xe000, 0xffff).rom();     // pac-man-4ever: expansion ROM (screens/data; plaintext - decrypt table is zero here)
 }
 
 
@@ -181,11 +189,12 @@ static INPUT_PORTS_START( jrpacman )
 	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_COIN2 )
 	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_COIN3 )
 
+	// pac-man-4ever: P2 is now an independent simultaneous player (was COCKTAIL)
 	PORT_START("P2")
-	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_4WAY PORT_COCKTAIL
-	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_JOYSTICK_LEFT ) PORT_4WAY PORT_COCKTAIL
-	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT ) PORT_4WAY PORT_COCKTAIL
-	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_4WAY PORT_COCKTAIL
+	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_4WAY PORT_PLAYER(2)
+	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_JOYSTICK_LEFT ) PORT_4WAY PORT_PLAYER(2)
+	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT ) PORT_4WAY PORT_PLAYER(2)
+	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_4WAY PORT_PLAYER(2)
 	PORT_SERVICE( 0x10, IP_ACTIVE_LOW )
 	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_START1 )
 	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_START2 )
@@ -193,22 +202,43 @@ static INPUT_PORTS_START( jrpacman )
 	PORT_DIPSETTING(    0x80, DEF_STR( Upright ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( Cocktail ) )
 
+	// pac-man-4ever: new simultaneous players 3 and 4 (read at 0x5100 / 0x5101)
+	PORT_START("P3")
+	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_4WAY PORT_PLAYER(3)
+	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_JOYSTICK_LEFT ) PORT_4WAY PORT_PLAYER(3)
+	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT ) PORT_4WAY PORT_PLAYER(3)
+	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_4WAY PORT_PLAYER(3)
+	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_START3 )
+	PORT_BIT( 0xd0, IP_ACTIVE_HIGH, IPT_UNUSED )
+
+	PORT_START("P4")
+	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_4WAY PORT_PLAYER(4)
+	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_JOYSTICK_LEFT ) PORT_4WAY PORT_PLAYER(4)
+	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT ) PORT_4WAY PORT_PLAYER(4)
+	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_4WAY PORT_PLAYER(4)
+	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_START4 )
+	PORT_BIT( 0xd0, IP_ACTIVE_HIGH, IPT_UNUSED )
+
 	PORT_START("DSW1")
 	PORT_DIPNAME( 0x03, 0x01, DEF_STR( Coinage ) )          PORT_DIPLOCATION("SW1:1,2")
 	PORT_DIPSETTING(    0x03, DEF_STR( 2C_1C ) )
 	PORT_DIPSETTING(    0x01, DEF_STR( 1C_1C ) )
 	PORT_DIPSETTING(    0x02, DEF_STR( 1C_2C ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( Free_Play ) )
-	PORT_DIPNAME( 0x0c, 0x08, DEF_STR( Lives ) )            PORT_DIPLOCATION("SW1:3,4")
+	PORT_DIPNAME( 0x0c, 0x00, DEF_STR( Lives ) )            PORT_DIPLOCATION("SW1:3,4")   // pac-man-4ever: default 1 (per-round lives; ROM caps at 3)
 	PORT_DIPSETTING(    0x00, "1" )
 	PORT_DIPSETTING(    0x04, "2" )
 	PORT_DIPSETTING(    0x08, "3" )
 	PORT_DIPSETTING(    0x0c, "5" )
-	PORT_DIPNAME( 0x30, 0x00, DEF_STR( Bonus_Life ) )       PORT_DIPLOCATION("SW1:5,6")
-	PORT_DIPSETTING(    0x00, "10000" )
-	PORT_DIPSETTING(    0x10, "15000" )
-	PORT_DIPSETTING(    0x20, "20000" )
-	PORT_DIPSETTING(    0x30, "30000" )
+	// pac-man-4ever: Bonus Life repurposed (the award is patched out - extra lives have no
+	// place in competitive rounds). Bit4 = IMMUNITY: ghosts can't kill players. A testing
+	// switch - one human can drive several pacs through a full board clear.
+	PORT_DIPNAME( 0x10, 0x00, "Immunity (Testing)" )        PORT_DIPLOCATION("SW1:5")
+	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
+	PORT_DIPSETTING(    0x10, DEF_STR( On ) )
+	PORT_DIPNAME( 0x20, 0x00, DEF_STR( Unused ) )           PORT_DIPLOCATION("SW1:6")
+	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
+	PORT_DIPSETTING(    0x20, DEF_STR( On ) )
 	PORT_DIPNAME( 0x40, 0x40, DEF_STR( Difficulty ) )       PORT_DIPLOCATION("SW1:7")
 	PORT_DIPSETTING(    0x40, DEF_STR( Normal ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( Hard ) )
@@ -228,7 +258,7 @@ INPUT_PORTS_END
 static const gfx_layout tilelayout =
 {
 	8,8,
-	RGN_FRAC(1,2),
+	512,                 // pac-man-4ever: explicit count (was RGN_FRAC(1,2)) - decoupled from the now-larger gfx1 region
 	2,
 	{ 0, 4 },
 	{ STEP4(8*8,1), STEP4(0*8,1) },
@@ -240,7 +270,7 @@ static const gfx_layout tilelayout =
 static const gfx_layout spritelayout =
 {
 	16,16,
-	RGN_FRAC(1,2),
+	256,                 // pac-man-4ever: L1 sprite expansion 128 -> 256 (was RGN_FRAC(1,2)); upper 128 = new-art headroom
 	2,
 	{ 0, 4 },
 	{ STEP4(8*8,1), STEP4(16*8,1), STEP4(24*8,1), STEP4(0*8,1) },
@@ -267,6 +297,11 @@ void jrpacman_state::jrpacman(machine_config &config)
 	pacman(config);
 
 	// basic machine hardware
+	// pac-man-4ever: the 4P board taps the crystal at /3 (6.144MHz, was /6): four pacs +
+	// five ghosts exceed the stock Z80 budget (measured: main loop at ~55/120 with 4P).
+	// Game speed is frame-locked (vblank IRQ), sound/video have their own clocks - the
+	// CPU just stops missing frames.
+	m_maincpu->set_clock(18.432_MHz_XTAL / 3);
 	m_maincpu->set_addrmap(AS_PROGRAM, &jrpacman_state::main_map);
 	m_maincpu->set_addrmap(AS_IO, &jrpacman_state::port_map);
 
@@ -287,6 +322,15 @@ void jrpacman_state::jrpacman(machine_config &config)
 
 	// video hardware
 	m_gfxdecode->set_info(gfx_jrpacman);
+
+	// pac-man-4ever widescreen: reveal the entire 36x54 tile maze (288x432) instead of
+	// the stock 288x224 scrolling window. Bump the pixel clock proportionally so VBLANK
+	// (and thus game speed) stays identical to stock: clock = XTAL/3 * 472/264.
+	m_screen->set_raw(18.432_MHz_XTAL * 472 / 792, 384, 0, 288, 472, 0, 432);
+	// Arcade monitors default to a 4:3 physical aspect, which (rotated 90) would squash our
+	// now-wide playfield into a portrait window. Set square pixels so the window adopts the
+	// true 432x288 wide proportion after ROT90.
+	m_screen->set_physical_aspect(288, 432);
 
 	MCFG_VIDEO_START_OVERRIDE(jrpacman_state,jrpacman)
 }
@@ -319,10 +363,12 @@ ROM_START( jrpacman )
 	ROM_LOAD( "jr.pac-man_8h_11-9-83.8h",    0x8000, 0x2000, CRC(35f1fc6e) SHA1(b84b34560b9aae18b24274712b052283faa01730) )
 	ROM_LOAD( "jr.pac-man_8j_11-9-83.8j",    0xa000, 0x2000, CRC(9737099e) SHA1(07d912a61824323c8fc1b8bd0da89172d4f70b91) )
 	ROM_LOAD( "jr.pac-man_8k_11-9-83.8k",    0xc000, 0x2000, CRC(5252dd97) SHA1(18bd4d5381656120e4242811006c20776774de4d) )
+	ROM_LOAD_OPTIONAL( "pac4eva.6x",         0x6000, 0x2000, CRC(d8f49994) SHA1(0631457264ff7f8d5fb1edc2c0211992a67c73e6) ) // pac-man-4ever: expansion ROM 2 (engine modules; plaintext)
+	ROM_LOAD_OPTIONAL( "pac4eva.8x",         0xe000, 0x2000, CRC(d8f49994) SHA1(0631457264ff7f8d5fb1edc2c0211992a67c73e6) ) // pac-man-4ever: expansion ROM (plaintext; decrypt table is zero over 0xe000+)
 
-	ROM_REGION( 0x4000, "gfx1", 0 )
-	ROM_LOAD( "jr.pac-man_2c_11-9-83.2c",    0x0000, 0x2000, CRC(0527ff9b) SHA1(37fe3176b0d125b7d629e108e7ebdc1196e4a132) ) /* tiles (bank 1 & 2) */
-	ROM_LOAD( "jr.pac-man_2e_11-9-83.2e",    0x2000, 0x2000, CRC(73477193) SHA1(f00a488958ea0438642d345693787bdf771219ad) ) /* sprites (bank 1 & 2) */
+	ROM_REGION( 0x6000, "gfx1", 0 )   // pac-man-4ever: L1 layout = tiles 0x2000 + sprites 0x4000 (256). Upper 128 sprites blank in the stock set, painted via the gfx import tool in modroms.
+	ROM_LOAD( "jr.pac-man_2c_11-9-83.2c",    0x0000, 0x2000, CRC(0527ff9b) SHA1(37fe3176b0d125b7d629e108e7ebdc1196e4a132) ) /* tiles (512) */
+	ROM_LOAD( "jr.pac-man_2e_11-9-83.2e",    0x2000, 0x4000, CRC(73477193) SHA1(f00a488958ea0438642d345693787bdf771219ad) ) /* sprites (256; stock file is 0x2000 -> upper half zero-filled) */
 
 	ROM_REGION( 0x0120, "proms", 0 )
 	ROM_LOAD_NIB_LOW ( "a290-27axv-bxhd.9e", 0x0000, 0x0100, CRC(029d35c4) SHA1(d9aa2dc442e9ac36cf3c346b9fb1aa745eaf3cb8) ) /* color palette (low bits) */
@@ -342,9 +388,9 @@ ROM_START( jrpacmanf )
 	ROM_LOAD( "jr.pac-man_8j_11-9-83.8j",    0xa000, 0x2000, CRC(9737099e) SHA1(07d912a61824323c8fc1b8bd0da89172d4f70b91) )
 	ROM_LOAD( "jr.pac-man_8k_11-9-83.8k",    0xc000, 0x2000, CRC(5252dd97) SHA1(18bd4d5381656120e4242811006c20776774de4d) )
 
-	ROM_REGION( 0x4000, "gfx1", 0 )
-	ROM_LOAD( "jr.pac-man_2c_11-9-83.2c",    0x0000, 0x2000, CRC(0527ff9b) SHA1(37fe3176b0d125b7d629e108e7ebdc1196e4a132) ) /* tiles (bank 1 & 2) */
-	ROM_LOAD( "jr.pac-man_2e_11-9-83.2e",    0x2000, 0x2000, CRC(73477193) SHA1(f00a488958ea0438642d345693787bdf771219ad) ) /* sprites (bank 1 & 2) */
+	ROM_REGION( 0x6000, "gfx1", 0 )   // pac-man-4ever: L1 layout = tiles 0x2000 + sprites 0x4000 (256). Upper 128 sprites blank in the stock set, painted via the gfx import tool in modroms.
+	ROM_LOAD( "jr.pac-man_2c_11-9-83.2c",    0x0000, 0x2000, CRC(0527ff9b) SHA1(37fe3176b0d125b7d629e108e7ebdc1196e4a132) ) /* tiles (512) */
+	ROM_LOAD( "jr.pac-man_2e_11-9-83.2e",    0x2000, 0x4000, CRC(73477193) SHA1(f00a488958ea0438642d345693787bdf771219ad) ) /* sprites (256; stock file is 0x2000 -> upper half zero-filled) */
 
 	ROM_REGION( 0x0120, "proms", 0 )
 	ROM_LOAD_NIB_LOW ( "a290-27axv-bxhd.9e", 0x0000, 0x0100, CRC(029d35c4) SHA1(d9aa2dc442e9ac36cf3c346b9fb1aa745eaf3cb8) ) /* color palette (low bits) */

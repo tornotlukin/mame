@@ -276,7 +276,12 @@ void pacman_state::draw_sprites(screen_device &screen, bitmap_ind16 &bitmap, con
 	uint8_t *spriteram = m_spriteram;
 	uint8_t *spriteram_2 = m_spriteram2;
 
-	rectangle spriteclip(2*8, 34*8-1, 0*8, 28*8-1);
+	// pac-man-4ever: widen the y-extent to the full maze height so sprites in the lower
+	// maze aren't clipped (harmless for other games - intersected with cliprect below).
+	// pac-man-4ever: open the sprite clip to the full rendered bitmap so absolute-positioned
+	// actors are never dropped anywhere on the static maze (was 16..271 x 0..447, which cut
+	// the playfield edges). &= cliprect still bounds it to the visible screen.
+	rectangle spriteclip(0, 36*8-1, 0, 56*8-1);
 	spriteclip &= cliprect;
 
 	/* Draw the sprites. Note that it is important to draw them exactly in this */
@@ -295,7 +300,15 @@ void pacman_state::draw_sprites(screen_device &screen, bitmap_ind16 &bitmap, con
 		else
 		{
 			sx = 272 - spriteram_2[offs + 1];
-			sy = spriteram_2[offs] - 31;
+			// pac-man-4ever: the maze is rendered STATIC, so sprites must NOT use the hardware
+			// scroll. Position is purely (sprite coord) + region offset. Do NOT add m_jrpac_scroll:
+			// in power/frightened mode the game pushes a non-zero scroll to the port, which would
+			// shift every sprite ~256px off the static maze while the game logic stays correct.
+			sy = spriteram_2[offs] + 75;   // pac-man-4ever BETA(3-region): render-align constant = -31 + 106. Replaces the +0x6a COORD shift so coords stay native; 106 is exactly what +0x6a was doing in render.
+			// pac-man-4ever: 2-region coordinate system. Bit6 of the sprite color byte means
+			// "region B" (actor is in the far half of the scroll axis) -> shift +256px.
+			if (m_jrpac_abs)
+				{ if (spriteram[offs + 1] & 0x20) sy += 256; else if (spriteram[offs + 1] & 0x40) sy -= 256; }  // 3-region: bit5=B(left)+256, bit6=C(right)-256
 		}
 
 		fx = (spriteram[offs] & 1) ^ m_inv_spr;
@@ -304,15 +317,27 @@ void pacman_state::draw_sprites(screen_device &screen, bitmap_ind16 &bitmap, con
 		color = (spriteram[offs + 1] & 0x1f) | (m_colortablebank << 5) | (m_palettebank << 6);
 
 		m_gfxdecode->gfx(1)->transmask(bitmap,spriteclip,
-				(spriteram[offs] >> 2) | (m_spritebank << 6),
+				// pac-man-4ever: per-sprite bank select. Bit7 of the sprite color byte
+				// (unused by color, which is &0x1f) promotes this one sprite to bank 1,
+				// OR'd with the global bank. Lets in-game (global bank 0) sprites reach
+				// all 128 shapes individually - e.g. bank-1 girl-ghost beside bank-0 Pac.
+				(spriteram[offs] >> 2) | ((m_spritebank | ((spriteram[offs + 1] >> 7) & 1)) << 6) | ((m_sprhi ? (m_sprhi[offs >> 1] & 1) : 0) << 7),  // pac-man-4ever: bit7 = per-sprite high bank (256-sprite set); 0 for in-game actors so they stay in 0-127
 				color,
 				fx,fy,
 				sx,sy,
 				m_palette->transpen_mask(*m_gfxdecode->gfx(1), color & 0x3f, 0));
 
 		/* also plot the sprite with wraparound (tunnel in Crush Roller) */
+		// pac-man-4ever: SKIP the wraparound duplicate - jrpacman wraps along the OTHER axis
+		// (handled by the region system); this legacy double-draw ghosts sprites placed in the
+		// bottom strip (e.g. the fruit on-deck bay at sx=267 echoed at sx=11).
+		if (!m_jrpac_abs)
 		m_gfxdecode->gfx(1)->transmask(bitmap,spriteclip,
-				(spriteram[offs] >> 2) | (m_spritebank << 6),
+				// pac-man-4ever: per-sprite bank select. Bit7 of the sprite color byte
+				// (unused by color, which is &0x1f) promotes this one sprite to bank 1,
+				// OR'd with the global bank. Lets in-game (global bank 0) sprites reach
+				// all 128 shapes individually - e.g. bank-1 girl-ghost beside bank-0 Pac.
+				(spriteram[offs] >> 2) | ((m_spritebank | ((spriteram[offs + 1] >> 7) & 1)) << 6) | ((m_sprhi ? (m_sprhi[offs >> 1] & 1) : 0) << 7),  // pac-man-4ever: bit7 = per-sprite high bank (256-sprite set); 0 for in-game actors so they stay in 0-127
 				color,
 				fx,fy,
 				sx - 256,sy,
@@ -335,7 +360,15 @@ void pacman_state::draw_sprites(screen_device &screen, bitmap_ind16 &bitmap, con
 		else
 		{
 			sx = 272 - spriteram_2[offs + 1];
-			sy = spriteram_2[offs] - 31;
+			// pac-man-4ever: the maze is rendered STATIC, so sprites must NOT use the hardware
+			// scroll. Position is purely (sprite coord) + region offset. Do NOT add m_jrpac_scroll:
+			// in power/frightened mode the game pushes a non-zero scroll to the port, which would
+			// shift every sprite ~256px off the static maze while the game logic stays correct.
+			sy = spriteram_2[offs] + 75;   // pac-man-4ever BETA(3-region): render-align constant = -31 + 106. Replaces the +0x6a COORD shift so coords stay native; 106 is exactly what +0x6a was doing in render.
+			// pac-man-4ever: 2-region coordinate system. Bit6 of the sprite color byte means
+			// "region B" (actor is in the far half of the scroll axis) -> shift +256px.
+			if (m_jrpac_abs)
+				{ if (spriteram[offs + 1] & 0x20) sy += 256; else if (spriteram[offs + 1] & 0x40) sy -= 256; }  // 3-region: bit5=B(left)+256, bit6=C(right)-256
 		}
 		color = (spriteram[offs + 1] & 0x1f) | (m_colortablebank << 5) | (m_palettebank << 6);
 
@@ -343,19 +376,52 @@ void pacman_state::draw_sprites(screen_device &screen, bitmap_ind16 &bitmap, con
 		fy = (spriteram[offs] & 2) ^ ((m_inv_spr) << 1);
 
 		m_gfxdecode->gfx(1)->transmask(bitmap,spriteclip,
-				(spriteram[offs] >> 2) | (m_spritebank << 6),
+				// pac-man-4ever: per-sprite bank select. Bit7 of the sprite color byte
+				// (unused by color, which is &0x1f) promotes this one sprite to bank 1,
+				// OR'd with the global bank. Lets in-game (global bank 0) sprites reach
+				// all 128 shapes individually - e.g. bank-1 girl-ghost beside bank-0 Pac.
+				(spriteram[offs] >> 2) | ((m_spritebank | ((spriteram[offs + 1] >> 7) & 1)) << 6) | ((m_sprhi ? (m_sprhi[offs >> 1] & 1) : 0) << 7),  // pac-man-4ever: bit7 = per-sprite high bank (256-sprite set); 0 for in-game actors so they stay in 0-127
 				color,
 				fx,fy,
 				sx,sy + m_xoffsethack,
 				m_palette->transpen_mask(*m_gfxdecode->gfx(1), color & 0x3f, 0));
 
 		/* also plot the sprite with wraparound (tunnel in Crush Roller) */
+		// pac-man-4ever: SKIP the wraparound duplicate (see note in the first loop).
+		if (!m_jrpac_abs)
 		m_gfxdecode->gfx(1)->transmask(bitmap,spriteclip,
-				(spriteram[offs] >> 2) | (m_spritebank << 6),
+				// pac-man-4ever: per-sprite bank select. Bit7 of the sprite color byte
+				// (unused by color, which is &0x1f) promotes this one sprite to bank 1,
+				// OR'd with the global bank. Lets in-game (global bank 0) sprites reach
+				// all 128 shapes individually - e.g. bank-1 girl-ghost beside bank-0 Pac.
+				(spriteram[offs] >> 2) | ((m_spritebank | ((spriteram[offs + 1] >> 7) & 1)) << 6) | ((m_sprhi ? (m_sprhi[offs >> 1] & 1) : 0) << 7),  // pac-man-4ever: bit7 = per-sprite high bank (256-sprite set); 0 for in-game actors so they stay in 0-127
 				color,
 				fx,fy,
 				sx - 256,sy + m_xoffsethack,
 				m_palette->transpen_mask(*m_gfxdecode->gfx(1), color & 0x3f, 0));
+	}
+
+	// pac-man-4ever: 2 EXTENDED software sprites (slots 8,9) from spritext ($4B00), 4 bytes each:
+	// [img, color, sy_src, sx_src]. Same +75 / region(bit5,6) / per-sprite bank(bit7) / flip logic
+	// as the 8 hardware sprites, so 4 players + 4 ghosts + fruit + spare = 10 total.
+	if (m_spritext)
+	{
+		for (int e = 1; e >= 0; e--)
+		{
+			uint8_t img = m_spritext[e*4+0];
+			if (!img) continue;                 // img 0 = inactive
+			uint8_t col = m_spritext[e*4+1];
+			int sy = m_spritext[e*4+2] + 75;
+			int sx = 272 - m_spritext[e*4+3];
+			if (m_jrpac_abs) { if (col & 0x20) sy += 256; else if (col & 0x40) sy -= 256; }
+			uint8_t fx = (img & 1) ^ m_inv_spr;
+			uint8_t fy = (img & 2) ^ (m_inv_spr << 1);
+			int color = (col & 0x1f) | (m_colortablebank << 5) | (m_palettebank << 6);
+			int code  = (img >> 2) | ((m_spritebank | ((col >> 7) & 1)) << 6) | ((m_sprhi ? (m_sprhi[8 + e] & 1) : 0) << 7);  // pac-man-4ever: bit7 = per-sprite high bank (256-sprite set); sprhi[8..9] = extended sprites
+			m_gfxdecode->gfx(1)->transmask(bitmap, spriteclip, code, color, fx, fy, sx, sy,
+					m_palette->transpen_mask(*m_gfxdecode->gfx(1), color & 0x3f, 0));
+			// pac-man-4ever: no wraparound duplicate (jrpacman wraps on the other axis; see above)
+		}
 	}
 }
 
@@ -610,10 +676,14 @@ TILEMAP_MAPPER_MEMBER(pacman_state::jrpacman_scan_rows)
 	col -= 2;
 	if (col & 0x20)
 	{
-		if (row & 0x20)
-			return 0x77f; // outside visible area
+		// pac-man-4ever: the 4 edge strips (HUD rows) have RAM for only 30 of 54 cells each.
+		// Remapped (user HUD layout 2026-07-02): the live 30 cells are CENTERED - display cols
+		// 0C-29 hex (native rows 12-41) -> slots 2-31 (exact budget, no spares); the dead 24
+		// split 12+12 at the screen ends. Addr for display col Dc: block + (43 - Dc).
+		if (row >= 14 && row <= 43)
+			return (row - 12) + (((col & 0x3) | 0x38) << 5);
 		else
-			return row + (((col & 0x3) | 0x38) << 5);
+			return 0x77f; // outside visible area
 	}
 	else
 		return col + (row << 5);
@@ -671,6 +741,7 @@ VIDEO_START_MEMBER(pacman_state,jrpacman)
 	m_bgpriority = 0;
 	m_inv_spr = 0;
 	m_xoffsethack = 1;
+	m_jrpac_abs = 1;   // pac-man-4ever: enable 9-bit absolute sprite Y from the 0x4A00 table
 
 	m_bg_tilemap = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(pacman_state::jrpacman_get_tile_info)), tilemap_mapper_delegate(*this, FUNC(pacman_state::jrpacman_scan_rows)), 8, 8, 36, 54);
 
@@ -697,9 +768,13 @@ void pacman_state::jrpacman_spritebank_w(int state)
 
 void pacman_state::jrpacman_scroll_w(uint8_t data)
 {
+	// pac-man-4ever widescreen: the whole maze is visible, so don't scroll the
+	// playfield. Stash the value the game wanted so draw_sprites can add it back to
+	// the (scroll-relative) sprite coords and keep sprites matched to the static maze.
+	m_jrpac_scroll = data;
 	for (int i = 2; i < 34; i++)
 	{
-		m_bg_tilemap->set_scrolly(i, data);
+		m_bg_tilemap->set_scrolly(i, 0);
 	}
 }
 
