@@ -10871,6 +10871,43 @@ ROM_START( xmvsf )
 	ROM_LOAD( "xmvsf.key",    0x000000, 0x000014, CRC(d5c07311) SHA1(1b401ffc241436c4869486c174774b67e3bf3df8) )
 ROM_END
 
+// xmvsf2v2: "X-Men vs Street Fighter 2v2" (TORNOTLUKIN, 2026). The X-Men 2v2 mod is
+// DRIVER-ONLY (init_xmvsf_4p) on bit-for-bit stock xmvsf ROMs, so this set's files are the
+// unmodified xmvse dumps. Standalone (parent 0) for the curated Modalicious build;
+// xmvsf2v2.zip = a copy of the stock xmvsf romset.
+ROM_START( xmvsf2v2 )
+	ROM_REGION( CODE_SIZE, "maincpu", 0 ) // 68000 code
+	ROM_LOAD16_WORD_SWAP( "xvse.03f", 0x000000, 0x80000, CRC(db06413f) SHA1(c6d8aa1e43fc541e5b4e938258f27ab9ee30ca33) )
+	ROM_LOAD16_WORD_SWAP( "xvse.04f", 0x080000, 0x80000, CRC(ef015aef) SHA1(d3504cb8c38f720b1f4528157266db60c8c6c075) )
+	ROM_LOAD16_WORD_SWAP( "xvs.05a",  0x100000, 0x80000, CRC(7db6025d) SHA1(2d74f48f83f45359bfaca28ab686625766af12ee) )
+	ROM_LOAD16_WORD_SWAP( "xvs.06a",  0x180000, 0x80000, CRC(e8e2c75c) SHA1(929408cb5d98e95cec75ea58e4701b0cbdbcd016) )
+	ROM_LOAD16_WORD_SWAP( "xvs.07",   0x200000, 0x80000, CRC(08f0abed) SHA1(ef16c376232dba63b0b9bc3aa0640f9001ccb68a) )
+	ROM_LOAD16_WORD_SWAP( "xvs.08",   0x280000, 0x80000, CRC(81929675) SHA1(19cf7afbc1daaefec40195e40ba74970f3906a1c) )
+	ROM_LOAD16_WORD_SWAP( "xvs.09",   0x300000, 0x80000, CRC(9641f36b) SHA1(dcba3482d1ba37ccfb30d402793ee063c6621aed) )
+
+	ROM_REGION( 0x2000000, "gfx", 0 )
+	ROM_LOAD64_WORD( "xvs.13m",   0x0000000, 0x400000, CRC(f6684efd) SHA1(c0a2f3a9e82ab8b084a500aec71ac633e947328c) )
+	ROM_LOAD64_WORD( "xvs.15m",   0x0000002, 0x400000, CRC(29109221) SHA1(898b8f678fd03c462ce0d8eb7fb3441ef601085b) )
+	ROM_LOAD64_WORD( "xvs.17m",   0x0000004, 0x400000, CRC(92db3474) SHA1(7b6f4c8ebfdac167b25f35029068b6253c141fe6) )
+	ROM_LOAD64_WORD( "xvs.19m",   0x0000006, 0x400000, CRC(3733473c) SHA1(6579da7145c95b3ad00844a5fc8c2e22c23365e2) )
+	ROM_LOAD64_WORD( "xvs.14m",   0x1000000, 0x400000, CRC(bcac2e41) SHA1(838ff24f7e8543a787a55a5d592c9517ce3b8b93) )
+	ROM_LOAD64_WORD( "xvs.16m",   0x1000002, 0x400000, CRC(ea04a272) SHA1(cd7c79037b5b4a39bef5156433e984dc4dc2c081) )
+	ROM_LOAD64_WORD( "xvs.18m",   0x1000004, 0x400000, CRC(b0def86a) SHA1(da3a6705ea7050fc5c2c10d33400ed67be9f455d) )
+	ROM_LOAD64_WORD( "xvs.20m",   0x1000006, 0x400000, CRC(4b40ff9f) SHA1(9a981d442132efff09a27408d74646ba357c7357) )
+
+	ROM_REGION( QSOUND_SIZE, "audiocpu", 0 ) // 64k for the audio CPU (+banks)
+	ROM_LOAD( "xvs.01",   0x00000, 0x08000, CRC(3999e93a) SHA1(fefcff8a9a5c83df7655a16187cf9ba3e7efbb25) )
+	ROM_CONTINUE(         0x10000, 0x18000 )
+	ROM_LOAD( "xvs.02",   0x28000, 0x20000, CRC(101bdee9) SHA1(75920e88bf46fcd33a7957777a1d799818ffb0d6) )
+
+	ROM_REGION( 0x400000, "qsound", 0 ) // QSound samples
+	ROM_LOAD16_WORD_SWAP( "xvs.11m",   0x000000, 0x200000, CRC(9cadcdbc) SHA1(64d3bd53b04daec84c9af4aa3ff010867b3d306d) )
+	ROM_LOAD16_WORD_SWAP( "xvs.12m",   0x200000, 0x200000, CRC(7b11e460) SHA1(a581c84acaaf0ce056841c15a6f36889e88be68d) )
+
+	ROM_REGION( 0x20, "key", 0 )
+	ROM_LOAD( "xmvsf.key",    0x000000, 0x000014, CRC(d5c07311) SHA1(1b401ffc241436c4869486c174774b67e3bf3df8) )
+ROM_END
+
 ROM_START( xmvsfr1 )
 	ROM_REGION( CODE_SIZE, "maincpu", 0 ) // 68000 code
 	ROM_LOAD16_WORD_SWAP( "xvse.03d", 0x000000, 0x80000, CRC(5ae5bd3b) SHA1(f687f018008cef24f86f53373c3f5547741a4c5b) )
@@ -13277,6 +13314,7 @@ GAME( 1996, qndream,    0,        cps2,     qndream,   cps2_state, init_cps2,   
 // set: xmvsf needed no ROM patch at all (Akuma is reachable by the normal select code), so once
 // the stock entry carries the selector a separate set would be an exact duplicate.
 GAME( 1996, xmvsf,      0,        cps2_4p_43, cps2_4p6b_mode, cps2_state, init_xmvsf_4p, ROT0, "Capcom", "X-Men Vs. Street Fighter (Europe 961004)",                                      MACHINE_SUPPORTS_SAVE )
+GAME( 2026, xmvsf2v2,   0,        cps2_4p_43, cps2_4p6b_mode2v2, cps2_state, init_xmvsf_4p, ROT0, "TORNOTLUKIN", "X-Men vs Street Fighter 2v2",                                             MACHINE_SUPPORTS_SAVE )
 GAME( 1996, xmvsfr1,    xmvsf,    cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (Europe 960910)",                                      MACHINE_SUPPORTS_SAVE )
 GAME( 1996, xmvsfu,     xmvsf,    cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (USA 961023)",                                         MACHINE_SUPPORTS_SAVE )
 GAME( 1996, xmvsfur1,   xmvsf,    cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (USA 961004)",                                         MACHINE_SUPPORTS_SAVE )
@@ -13311,7 +13349,7 @@ GAME( 1997, mshvsfj1,   mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,   
 GAME( 1997, mshvsfj2,   mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Japan 970625)",                         MACHINE_SUPPORTS_SAVE )
 // Same 2v2 mod as the stock mshvsf entry, on patched ROMs that also unlock the secret characters
 // (hold your own START on a base character). Defaults to 2v2; 1v1 still available in the menu.
-GAME( 1997, mshvsf2v2,  mshvsf,   cps2_4p_43, cps2_4p6b_mode2v2, cps2_state, init_mshvsf_4p, ROT0, "TORNOTLUKIN", "Marvel Super Heroes Vs. Street Fighter 2v2 (secret characters)",     MACHINE_SUPPORTS_SAVE )
+GAME( 2026, mshvsf2v2,  0,        cps2_4p_43, cps2_4p6b_mode2v2, cps2_state, init_mshvsf_4p, ROT0, "TORNOTLUKIN", "Marvel Super Heroes vs Street Fighter 2v2",                          MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfh,    mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Hispanic 970625)",                      MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfa,    mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Asia 970625)",                          MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfa1,   mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Asia 970620)",                          MACHINE_SUPPORTS_SAVE )
@@ -13337,11 +13375,11 @@ GAME( 1998, mvscr1,     mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,   
 GAME( 1998, mvscu,      mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (USA 980123)",                         MACHINE_SUPPORTS_SAVE )
 // Same 2v2 mod as the stock mvsc entry, on patched USA ROMs with every hidden character unlocked.
 // Defaults to 2v2; 1v1 still available in the menu.
-GAME( 1998, mvsc2v2,    mvsc,     cps2_4p_43, cps2_4p6b_mode2v2, cps2_state, init_mvsc2v2_4p, ROT0, "TORNOTLUKIN", "Marvel Vs. Capcom: Clash of Super Heroes 2v2 (all characters)",       MACHINE_SUPPORTS_SAVE )
+GAME( 2026, mvsc2v2,    0,        cps2_4p_43, cps2_4p6b_mode2v2, cps2_state, init_mvsc2v2_4p, ROT0, "TORNOTLUKIN", "Marvel vs Capcom 2v2",                                             MACHINE_SUPPORTS_SAVE )
 // 4-LIVE Duo: NOT a 2v2 tag mod and NOT selectable -- all four fighters are on the field at once,
 // always. Uses the insulated cps2_4p6b_duo ports (no "Play Mode" entry, since there is no 1v1 to
 // switch to) and routes P3/P4 from its own program ROM rather than the driver mux.
-GAME( 1998, mvscduo,    mvsc,     cps2_4p_duo, cps2_4p6b_duo, cps2_state, init_mvscduo, ROT0,  "TORNOTLUKIN", "Marvel Vs. Capcom: Clash of Super Heroes Duo (widescreen)",               MACHINE_SUPPORTS_SAVE )
+GAME( 2026, mvscduo,    0,        cps2_4p_duo, cps2_4p6b_duo, cps2_state, init_mvscduo, ROT0,  "TORNOTLUKIN", "Marvel vs Capcom Widescreen Duo-Mode",                                  MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscur1,    mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (USA 971222)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscj,      mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Japan 980123)",                       MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscjr1,    mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Japan 980112)",                       MACHINE_SUPPORTS_SAVE )

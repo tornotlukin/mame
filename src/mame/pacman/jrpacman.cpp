@@ -380,6 +380,33 @@ ROM_START( jrpacman )
 	ROM_LOAD( "a290-27axv-exhd.5s",          0x0100, 0x0100, CRC(77245b66) SHA1(0c4d0bee858b97632411c440bea6948a74759746) ) /* timing - not used */
 ROM_END
 
+// pac4eva: "Pac-Man 4 EVA" (TORNOTLUKIN, 2026) — pac-man-4ever standalone set. Same board
+// as jrpacman with the two expansion ROMs REQUIRED (not optional) and the L1 256-sprite gfx
+// layout. Self-contained (parent 0) so it ships in the curated Modalicious build alone.
+ROM_START( pac4eva )
+	ROM_REGION( 0x10000, "maincpu", 0 )
+	ROM_LOAD( "jr.pac-man_8d_11-9-83.8d",    0x0000, 0x2000, CRC(e3fa972e) SHA1(5ea34621213c649ca2848ab31aab2cbe751723d4) )
+	ROM_LOAD( "jr.pac-man_8e_11-9-83.8e",    0x2000, 0x2000, CRC(ec889e94) SHA1(8294e9e79f8fd19a419431fa690e6ac4a1302f58) )
+	ROM_LOAD( "jr.pac-man_8h_11-9-83.8h",    0x8000, 0x2000, CRC(35f1fc6e) SHA1(b84b34560b9aae18b24274712b052283faa01730) )
+	ROM_LOAD( "jr.pac-man_8j_11-9-83.8j",    0xa000, 0x2000, CRC(9737099e) SHA1(07d912a61824323c8fc1b8bd0da89172d4f70b91) )
+	ROM_LOAD( "jr.pac-man_8k_11-9-83.8k",    0xc000, 0x2000, CRC(5252dd97) SHA1(18bd4d5381656120e4242811006c20776774de4d) )
+	ROM_LOAD( "pac4eva.6x",                  0x6000, 0x2000, CRC(d8f49994) SHA1(0631457264ff7f8d5fb1edc2c0211992a67c73e6) ) // expansion ROM 2 (engine modules; plaintext)
+	ROM_LOAD( "pac4eva.8x",                  0xe000, 0x2000, CRC(d8f49994) SHA1(0631457264ff7f8d5fb1edc2c0211992a67c73e6) ) // expansion ROM (plaintext; decrypt table zero over 0xe000+)
+
+	ROM_REGION( 0x6000, "gfx1", 0 )   // L1 layout = tiles 0x2000 + sprites 0x4000 (256)
+	ROM_LOAD( "jr.pac-man_2c_11-9-83.2c",    0x0000, 0x2000, CRC(0527ff9b) SHA1(37fe3176b0d125b7d629e108e7ebdc1196e4a132) ) /* tiles (512) */
+	ROM_LOAD( "jr.pac-man_2e_11-9-83.2e",    0x2000, 0x4000, CRC(73477193) SHA1(f00a488958ea0438642d345693787bdf771219ad) ) /* sprites (256; stock file 0x2000 -> upper half zero-filled) */
+
+	ROM_REGION( 0x0120, "proms", 0 )
+	ROM_LOAD_NIB_LOW ( "a290-27axv-bxhd.9e", 0x0000, 0x0100, CRC(029d35c4) SHA1(d9aa2dc442e9ac36cf3c346b9fb1aa745eaf3cb8) ) /* color palette (low bits) */
+	ROM_LOAD_NIB_HIGH( "a290-27axv-cxhd.9f", 0x0000, 0x0100, CRC(eee34a79) SHA1(7561f8ccab2af85c111af6a02af6986eb67503e5) ) /* color palette (high bits) */
+	ROM_LOAD( "a290-27axv-axhd.9p",          0x0020, 0x0100, CRC(9f6ea9d8) SHA1(62cf15513934d34641433c891a7f73bef82e2fb1) ) /* color lookup table */
+
+	ROM_REGION( 0x0200, "namco", 0 )
+	ROM_LOAD( "a290-27axv-dxhd.7p",          0x0000, 0x0100, CRC(a9cc86bf) SHA1(bbcec0570aeceb582ff8238a4bc8546a23430081) ) /* waveform */
+	ROM_LOAD( "a290-27axv-exhd.5s",          0x0100, 0x0100, CRC(77245b66) SHA1(0c4d0bee858b97632411c440bea6948a74759746) ) /* timing - not used */
+ROM_END
+
 ROM_START( jrpacmanf )
 	ROM_REGION( 0x10000, "maincpu", 0 )
 	ROM_LOAD( "fast_jr.8d",                  0x0000, 0x2000, CRC(461e8b57) SHA1(42e25d384e653efb95a97bd64f55a8c3b3f71239) ) // only 1 byte difference
@@ -464,3 +491,4 @@ void jrpacman_state::init_jrpacman()
 
 GAME( 1983, jrpacman,  0,        jrpacman, jrpacman, jrpacman_state, init_jrpacman, ROT90, "Bally Midway", "Jr. Pac-Man (11/9/83)",      MACHINE_SUPPORTS_SAVE )
 GAME( 1983, jrpacmanf, jrpacman, jrpacman, jrpacman, jrpacman_state, init_jrpacman, ROT90, "hack",         "Jr. Pac-Man (speedup hack)", MACHINE_SUPPORTS_SAVE )
+GAME( 2026, pac4eva,   0,        jrpacman, jrpacman, jrpacman_state, init_jrpacman, ROT90, "TORNOTLUKIN",  "Pac-Man 4 EVA",              MACHINE_SUPPORTS_SAVE )

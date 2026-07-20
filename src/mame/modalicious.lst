@@ -1,0 +1,17 @@
+// license:BSD-3-Clause
+// copyright-holders:TORNOTLUKIN
+/*******************************************************************************
+    modalicious.lst
+    Curated driver list for the Modalicious build — ONLY the modded games.
+    Each machine is a standalone (parent 0) set; the stock parents are
+    deliberately excluded so the UI shows only these five titles.
+*******************************************************************************/
+
+@source:pacman/jrpacman.cpp
+pac4eva          // Pac-Man 4 EVA
+
+@source:capcom/cps2.cpp
+xmvsf2v2         // X-Men vs Street Fighter 2v2
+mshvsf2v2        // Marvel Super Heroes vs Street Fighter 2v2
+mvsc2v2          // Marvel vs Capcom 2v2
+mvscduo          // Marvel vs Capcom Widescreen Duo-Mode
