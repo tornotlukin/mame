@@ -908,6 +908,13 @@ void cps2_state::cps2_render_sprites(screen_device &screen, bitmap_ind16 &bitmap
 	const int xoffs = 64 - m_output[CPS2_OBJ_XOFFS];
 	const int yoffs = 16 - m_output[CPS2_OBJ_YOFFS];
 
+	// Widescreen support (mvscduo): the visible window starts at raster 0, so sprite pieces
+	// straddling the LEFT screen edge must draw at negative X. Plain `& 0x3ff` maps -16..-1 to
+	// 0x3F0..0x3FF (far off the right side), which visibly crops fighters 16px per piece at the
+	// widescreen left edge. Re-interpret that top 16px band as negative instead. Harmless for the
+	// stock 4:3 sets: for them both -16..-1 and the 0..63 margin are outside the visible window.
+	auto wrapx = [](int v) { v &= 0x3ff; return (v >= 0x3f0) ? v - 0x400 : v; };
+
 #ifdef MAME_DEBUG
 	if (machine().input().code_pressed(KEYCODE_Z) && machine().input().code_pressed(KEYCODE_R))
 	{
@@ -950,7 +957,7 @@ void cps2_state::cps2_render_sprites(screen_device &screen, bitmap_ind16 &bitmap
 						const int sy = (y + nys * 16 + yoffs) & 0x3ff;
 						for (int nxs = 0; nxs < nx; nxs++)
 						{
-							const int sx = (x + nxs * 16 + xoffs) & 0x3ff;
+							const int sx = wrapx(x + nxs * 16 + xoffs);
 							DRAWSPRITE(
 									code + (nx - 1) - nxs + 0x10 * (ny - 1 - nys),
 									col,
@@ -966,7 +973,7 @@ void cps2_state::cps2_render_sprites(screen_device &screen, bitmap_ind16 &bitmap
 						const int sy = (y + nys * 16 + yoffs) & 0x3ff;
 						for (int nxs = 0; nxs < nx; nxs++)
 						{
-							const int sx = (x + nxs * 16 + xoffs) & 0x3ff;
+							const int sx = wrapx(x + nxs * 16 + xoffs);
 							DRAWSPRITE(
 									code + nxs + 0x10 * (ny - 1 - nys),
 									col,
@@ -985,7 +992,7 @@ void cps2_state::cps2_render_sprites(screen_device &screen, bitmap_ind16 &bitmap
 						const int sy = (y + nys * 16 + yoffs) & 0x3ff;
 						for (int nxs = 0; nxs < nx; nxs++)
 						{
-							const int sx = (x + nxs * 16 + xoffs) & 0x3ff;
+							const int sx = wrapx(x + nxs * 16 + xoffs);
 							DRAWSPRITE(
 									code + (nx - 1) - nxs + 0x10 * nys,
 									col,
@@ -1001,7 +1008,7 @@ void cps2_state::cps2_render_sprites(screen_device &screen, bitmap_ind16 &bitmap
 						const int sy = (y + nys * 16 + yoffs) & 0x3ff;
 						for (int nxs = 0; nxs < nx; nxs++)
 						{
-							const int sx = (x + nxs * 16 + xoffs) & 0x3ff;
+							const int sx = wrapx(x + nxs * 16 + xoffs);
 							DRAWSPRITE(
 									//code + nxs + 0x10 * nys,
 									(code & ~0xf) + ((code + nxs) & 0xf) + 0x10 * nys, // pgear fix, same as CPS1?
@@ -1020,7 +1027,7 @@ void cps2_state::cps2_render_sprites(screen_device &screen, bitmap_ind16 &bitmap
 					code,
 					col,
 					flipx, flipy,
-					(x + xoffs) & 0x3ff, (y + yoffs) & 0x3ff);
+					wrapx(x + xoffs), (y + yoffs) & 0x3ff);
 		}
 	}
 #undef DRAWSPRITE
