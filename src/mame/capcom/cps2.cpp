@@ -908,6 +908,13 @@ void cps2_state::cps2_render_sprites(screen_device &screen, bitmap_ind16 &bitmap
 	const int xoffs = 64 - m_output[CPS2_OBJ_XOFFS];
 	const int yoffs = 16 - m_output[CPS2_OBJ_YOFFS];
 
+	// Widescreen support (mvscduo): the visible window starts at raster 0, so sprite pieces
+	// straddling the LEFT screen edge must draw at negative X. Plain `& 0x3ff` maps -16..-1 to
+	// 0x3F0..0x3FF (far off the right side), which visibly crops fighters 16px per piece at the
+	// widescreen left edge. Re-interpret that top 16px band as negative instead. Harmless for the
+	// stock 4:3 sets: for them both -16..-1 and the 0..63 margin are outside the visible window.
+	auto wrapx = [](int v) { v &= 0x3ff; return (v >= 0x3f0) ? v - 0x400 : v; };
+
 #ifdef MAME_DEBUG
 	if (machine().input().code_pressed(KEYCODE_Z) && machine().input().code_pressed(KEYCODE_R))
 	{
@@ -950,7 +957,7 @@ void cps2_state::cps2_render_sprites(screen_device &screen, bitmap_ind16 &bitmap
 						const int sy = (y + nys * 16 + yoffs) & 0x3ff;
 						for (int nxs = 0; nxs < nx; nxs++)
 						{
-							const int sx = (x + nxs * 16 + xoffs) & 0x3ff;
+							const int sx = wrapx(x + nxs * 16 + xoffs);
 							DRAWSPRITE(
 									code + (nx - 1) - nxs + 0x10 * (ny - 1 - nys),
 									col,
@@ -966,7 +973,7 @@ void cps2_state::cps2_render_sprites(screen_device &screen, bitmap_ind16 &bitmap
 						const int sy = (y + nys * 16 + yoffs) & 0x3ff;
 						for (int nxs = 0; nxs < nx; nxs++)
 						{
-							const int sx = (x + nxs * 16 + xoffs) & 0x3ff;
+							const int sx = wrapx(x + nxs * 16 + xoffs);
 							DRAWSPRITE(
 									code + nxs + 0x10 * (ny - 1 - nys),
 									col,
@@ -985,7 +992,7 @@ void cps2_state::cps2_render_sprites(screen_device &screen, bitmap_ind16 &bitmap
 						const int sy = (y + nys * 16 + yoffs) & 0x3ff;
 						for (int nxs = 0; nxs < nx; nxs++)
 						{
-							const int sx = (x + nxs * 16 + xoffs) & 0x3ff;
+							const int sx = wrapx(x + nxs * 16 + xoffs);
 							DRAWSPRITE(
 									code + (nx - 1) - nxs + 0x10 * nys,
 									col,
@@ -1001,7 +1008,7 @@ void cps2_state::cps2_render_sprites(screen_device &screen, bitmap_ind16 &bitmap
 						const int sy = (y + nys * 16 + yoffs) & 0x3ff;
 						for (int nxs = 0; nxs < nx; nxs++)
 						{
-							const int sx = (x + nxs * 16 + xoffs) & 0x3ff;
+							const int sx = wrapx(x + nxs * 16 + xoffs);
 							DRAWSPRITE(
 									//code + nxs + 0x10 * nys,
 									(code & ~0xf) + ((code + nxs) & 0xf) + 0x10 * nys, // pgear fix, same as CPS1?
@@ -1020,7 +1027,7 @@ void cps2_state::cps2_render_sprites(screen_device &screen, bitmap_ind16 &bitmap
 					code,
 					col,
 					flipx, flipy,
-					(x + xoffs) & 0x3ff, (y + yoffs) & 0x3ff);
+					wrapx(x + xoffs), (y + yoffs) & 0x3ff);
 		}
 	}
 #undef DRAWSPRITE
@@ -6183,14 +6190,14 @@ ROM_END
 // mvcduo.10. Shared euro data ROMs (mvc.05a-.09) + gfx/audio/qsound unchanged.
 ROM_START( mvscduo )
 	ROM_REGION( CODE_SIZE, "maincpu", 0 ) // 68000 code
-	ROM_LOAD16_WORD_SWAP( "mvcduo.03a", 0x000000, 0x80000, CRC(aa0a088e) SHA1(72f492fb9487f323f96212418a185908d920111f) )
-	ROM_LOAD16_WORD_SWAP( "mvcduo.04a", 0x080000, 0x80000, CRC(00cf80c3) SHA1(64928c3febdb7274eb075fa3188fb7804bdf5c64) )
+	ROM_LOAD16_WORD_SWAP( "mvcduo.03a", 0x000000, 0x80000, CRC(8819363b) SHA1(24cbe21ed8dcbbea874bc8e21b77c79511894ec7) )
+	ROM_LOAD16_WORD_SWAP( "mvcduo.04a", 0x080000, 0x80000, CRC(c706a9b0) SHA1(7e0d53160bd9d3bf9402d569efab811f15591671) )
 	ROM_LOAD16_WORD_SWAP( "mvc.05a",  0x100000, 0x80000, CRC(2d8c8e86) SHA1(b07d640a734c5d336054ed05195786224c9a6cd4) )
 	ROM_LOAD16_WORD_SWAP( "mvc.06a",  0x180000, 0x80000, CRC(8528e1f5) SHA1(cd065c05268ab581b05676da544baf6af642acac) )
 	ROM_LOAD16_WORD_SWAP( "mvc.07",   0x200000, 0x80000, CRC(c3baa32b) SHA1(d35589847e0753e869ffcd7c3abed925bfdb0fa2) )
 	ROM_LOAD16_WORD_SWAP( "mvc.08",   0x280000, 0x80000, CRC(bc002fcd) SHA1(0b6735a071a9274f7ab25c743271fc30411fe819) )
 	ROM_LOAD16_WORD_SWAP( "mvc.09",   0x300000, 0x80000, CRC(c67b26df) SHA1(6e9969246c57269d7ba0992a5cc319c8910bf8a9) )
-	ROM_LOAD16_WORD_SWAP( "mvcduo.10", 0x380000, 0x80000, CRC(212af648) SHA1(357b3ba6dd48f1bc8b61da2df47b80a805c0546d) )
+	ROM_LOAD16_WORD_SWAP( "mvcduo.10", 0x380000, 0x80000, CRC(ae9075e8) SHA1(1aecd7f80c1562fa4200cc4068cb5cbaa3e08808) )
 
 	ROM_REGION( 0x2000000, "gfx", 0 )
 	ROM_LOAD64_WORD( "mvc.13m",   0x0000000, 0x400000, CRC(fa5f74bc) SHA1(79a619248938a85ce4f7794a704647b9cf564fbc) )
