@@ -37096,6 +37096,9 @@ thief
 jrpacman
 jrpacmanf
 
+@source:pacman/pac4eva.cpp
+pac4eva
+
 @source:pacman/pacman.cpp
 8bpm
 abscam
