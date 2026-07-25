@@ -14,18 +14,35 @@ Work streams are SEPARATE branches, all based on `mame0288`:
 | Branch | Contents | Rule |
 |--------|----------|------|
 | `llm-debugger` | MCP/ addon, debugremote, debugger UI tweaks, project docs | NO game-driver changes |
-| `jrpacman-4p` | `jrpacman:` game-board mods (`src/mame/pacman/*`) for pac-man-4ever | pure mod, PR-able |
-| `rp6-android` | **Composition**: merge of the above + MAME4droid myosd OSD overlay + Android build glue | what the Android core builds from (see `workshop-mame-android.md`) |
-| (planned) `cps2-4p` | CPS2 4-player fighting-game mod (`src/mame/capcom/*`) | own branch off upstream when started |
+| `pac4eva` | Pac-Man 4 EVA — **one added file**, `src/mame/pacman/pac4eva.cpp` (+ its `mame.lst` stanza) | additions only; touches NO stock source |
+| `vs-4p-mod` | CPS2 4-player fighting-game mods (`src/mame/capcom/*`) — xmvsf/mshvsf/mvsc 2v2 + mvscduo | in-place driver edits |
+| `modalicious` | **Composition**: `pac4eva` + `vs-4p-mod` + the Modalicious subtarget (`src/mame/modalicious.lst`, `scripts/target/mame/modalicious.lua`) | builds `mamemodalicious.exe` — the curated mods-only exe |
+| `rp6-android` | **Composition**: `llm-debugger` + the game mods + MAME4droid myosd OSD overlay + Android build glue | what the Android core builds from (see `workshop-mame-android.md`) |
 
-New commits go to the branch that owns the stream — never mix. Merge streams only in
-`rp6-android` (or future composition branches).
+New commits go to the branch that owns the stream — never mix. Merge streams only in the
+composition branches (`modalicious`, `rp6-android`).
 
-Build note: `pac4eva.exe` (the exe the game project launches) is built from THIS tree via
-the game repo's `tools/build_mame.sh` — **whichever branch is checked out is what it
-plays**, so check out `jrpacman-4p` (or `rp6-android`) before building pac4eva; plain
-`llm-debugger` has no game mods. The game repo's `drivers/` folder + `pac4eva-mame.patch`
-remain a branch-independent fallback.
+> **RENAMED 2026-07-25: `jrpacman-4p` → `pac4eva`** (old remote branch deleted). The name no
+> longer described the contents: the mod used to edit `jrpacman.cpp`, `pacman.h` and
+> `pacman_v.cpp` in place, but it is now a **single additive file**, `pac4eva.cpp`, and those
+> three stock files are byte-identical to upstream (`git diff e68ee468568^ -- src/mame/pacman/`
+> lists only `pac4eva.cpp`). Also corrected here: the CPS2 branch is `vs-4p-mod` and has been
+> active for a while (this table still called it "planned `cps2-4p`"), and `modalicious` was
+> missing entirely.
+
+Build note: `pac4eva.exe` (the fast dev exe the game project launches) is built from THIS tree
+via the game repo's `tools/build_mame.sh` — **whichever branch is checked out is what it
+plays**, so check out `pac4eva` (or a composition branch) before building; plain `llm-debugger`
+has no game mods. The curated exe is `mamemodalicious.exe`, built from `modalicious`.
+
+Because the Pac-Man 4 EVA driver is now purely additive, installing it anywhere is a copy plus
+one `mame.lst` stanza — no merge, no conflict resolution:
+```
+cp <game-repo>/drivers/pac4eva.cpp src/mame/pacman/pac4eva.cpp
+# mame.lst:  @source:pacman/pac4eva.cpp
+#            pac4eva
+```
+(The game repo's old `pac4eva-mame.patch` is gone — it described the retired in-place modset.)
 
 ## Android Project (RP6 / MAME4droid)
 
