@@ -27,6 +27,20 @@
       - DIPs repurposed for competitive play: per-round Lives, an Immunity
         testing switch, and a 4-way Difficulty scale (see below).
 
+    THE 3-REGION COORDINATE SYSTEM (why the video code lives here)
+
+    Actors store X in a single byte, which the stock game hides behind a
+    scrolling 224px window. Showing the whole 432px maze re-exposes that limit,
+    so every actor carries a "region": the maze is three overlapping 256px laps
+    and bits 5/6 of the sprite colour byte shift the rendered sprite +/-256px.
+    The maze itself is drawn STATIC - sprites must never add the hardware
+    scroll, because the game still writes a non-zero scroll value in frightened
+    mode which would fling every sprite off the playfield.
+
+    This driver is self-contained: it carries its own tilemap, sprite renderer
+    and screen update rather than patching the shared pacman_v.cpp, so stock
+    Pac-Man family drivers are untouched and this file survives MAME rebases.
+
     The program ROM is encrypted exactly as stock Jr. Pac-Man (the PALs garble
     bits 0, 2 and 7), so init_pac4eva applies the same XOR table.
 
@@ -50,6 +64,8 @@ class pac4eva_state : public pacman_state
 public:
 	pac4eva_state(const machine_config &mconfig, device_type type, const char *tag)
 		: pacman_state(mconfig, type, tag)
+		, m_spritext(*this, "spritext")
+		, m_sprhi(*this, "sprhi")
 	{ }
 
 	void pac4eva(machine_config &config);
@@ -59,6 +75,19 @@ public:
 private:
 	void main_map(address_map &map) ATTR_COLD;
 	void port_map(address_map &map) ATTR_COLD;
+
+	// video - our own, so the shared pacman_v.cpp is never modified
+	TILEMAP_MAPPER_MEMBER(scan_rows);
+	TILE_GET_INFO_MEMBER(get_tile_info);
+	void mark_tile_dirty(int offset);
+	void videoram_w(offs_t offset, uint8_t data);
+	void scroll_w(uint8_t data);
+	DECLARE_VIDEO_START(pac4eva);
+	void draw_sprites(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+	uint32_t screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
+
+	optional_shared_ptr<uint8_t> m_spritext;   // 2 extended (software) sprites, slots 8-9
+	optional_shared_ptr<uint8_t> m_sprhi;      // per-sprite high bank (code bit7) for the 256-shape set
 };
 
 
@@ -72,10 +101,10 @@ private:
 void pac4eva_state::main_map(address_map &map)
 {
 	map(0x0000, 0x3fff).rom();
-	map(0x4000, 0x47ff).ram().w(FUNC(pac4eva_state::jrpacman_videoram_w)).share("videoram");
+	map(0x4000, 0x47ff).ram().w(FUNC(pac4eva_state::videoram_w)).share("videoram");
 	map(0x4800, 0x4aff).ram();
 	map(0x4b00, 0x4b07).ram().share("spritext");   // 2 extended (software) sprites (slots 8,9)
-	map(0x4b08, 0x4b11).ram().share("sprhi");      // per-sprite high bank (code bit7) for the 256-shape set: [0..7]=hw sprites, [8..9]=extended
+	map(0x4b08, 0x4b11).ram().share("sprhi");      // per-sprite high bank: [0..7]=hw sprites, [8..9]=extended
 	map(0x4b12, 0x4fef).ram();
 	map(0x4ff0, 0x4fff).ram().share("spriteram");
 	map(0x5000, 0x503f).portr("P1");
@@ -85,7 +114,7 @@ void pac4eva_state::main_map(address_map &map)
 	map(0x5060, 0x506f).writeonly().share("spriteram2");
 	map(0x5070, 0x5077).w("latch2", FUNC(ls259_device::write_d0));
 	map(0x5080, 0x50bf).portr("DSW1");
-	map(0x5080, 0x5080).w(FUNC(pac4eva_state::jrpacman_scroll_w));
+	map(0x5080, 0x5080).w(FUNC(pac4eva_state::scroll_w));
 	map(0x50c0, 0x50c0).w(m_watchdog, FUNC(watchdog_timer_device::reset_w));
 	map(0x5100, 0x5100).portr("P3");               // extra simultaneous-player inputs
 	map(0x5101, 0x5101).portr("P4");
@@ -99,6 +128,226 @@ void pac4eva_state::port_map(address_map &map)
 {
 	map.global_mask(0xff);
 	map(0, 0).w(FUNC(pac4eva_state::pacman_interrupt_vector_w));
+}
+
+
+
+/*************************************
+ *
+ *  Video hardware
+ *
+ *************************************/
+
+TILEMAP_MAPPER_MEMBER(pac4eva_state::scan_rows)
+{
+	row += 2;
+	col -= 2;
+	if (col & 0x20)
+	{
+		// The 4 edge strips (HUD rows) have RAM for only 30 of their 54 cells. The live 30
+		// are CENTRED - display cols 0x0C-0x29 (native rows 12-41) map to slots 2-31, an
+		// exact budget with no spares; the dead 24 split 12+12 at the screen ends.
+		if (row >= 14 && row <= 43)
+			return (row - 12) + (((col & 0x3) | 0x38) << 5);
+		else
+			return 0x77f; // outside the visible area
+	}
+	else
+		return col + (row << 5);
+}
+
+
+TILE_GET_INFO_MEMBER(pac4eva_state::get_tile_info)
+{
+	int color_index;
+	if (tile_index < 1792)
+		color_index = tile_index & 0x1f;
+	else
+		color_index = tile_index + 0x80;
+
+	int code = m_videoram[tile_index] | (m_charbank << 8);
+	int attr = (m_videoram[color_index] & 0x1f) | (m_colortablebank << 5) | (m_palettebank << 6);
+
+	tileinfo.set(0, code, attr, 0);
+}
+
+
+void pac4eva_state::mark_tile_dirty(int offset)
+{
+	if (offset < 0x20)
+	{
+		/* line color - mark whole line as dirty */
+		for (int i = 2 * 0x20; i < 56 * 0x20; i += 0x20)
+			m_bg_tilemap->mark_tile_dirty(offset + i);
+	}
+	else if (offset < 1792)
+	{
+		/* tiles for playfield */
+		m_bg_tilemap->mark_tile_dirty(offset);
+	}
+	else
+	{
+		/* tiles & colors for top and bottom two rows */
+		m_bg_tilemap->mark_tile_dirty(offset & ~0x80);
+	}
+}
+
+
+void pac4eva_state::videoram_w(offs_t offset, uint8_t data)
+{
+	m_videoram[offset] = data;
+	mark_tile_dirty(offset);
+}
+
+
+void pac4eva_state::scroll_w(uint8_t data)
+{
+	// Widescreen: the whole maze is visible, so the playfield never scrolls. The value the
+	// game writes is deliberately DISCARDED - sprite positions are absolute (see draw_sprites).
+	for (int i = 2; i < 34; i++)
+		m_bg_tilemap->set_scrolly(i, 0);
+}
+
+
+VIDEO_START_MEMBER(pac4eva_state,pac4eva)
+{
+	save_item(NAME(m_charbank));
+	save_item(NAME(m_spritebank));
+	save_item(NAME(m_palettebank));
+	save_item(NAME(m_colortablebank));
+	save_item(NAME(m_flipscreen));
+	save_item(NAME(m_bgpriority));
+	save_item(NAME(m_irq_mask));
+	save_item(NAME(m_interrupt_vector));
+
+	m_charbank = 0;
+	m_spritebank = 0;
+	m_palettebank = 0;
+	m_colortablebank = 0;
+	m_flipscreen = 0;
+	m_bgpriority = 0;
+	m_inv_spr = 0;
+	m_xoffsethack = 1;
+
+	m_bg_tilemap = &machine().tilemap().create(
+			*m_gfxdecode,
+			tilemap_get_info_delegate(*this, FUNC(pac4eva_state::get_tile_info)),
+			tilemap_mapper_delegate(*this, FUNC(pac4eva_state::scan_rows)),
+			8, 8, 36, 54);
+
+	m_bg_tilemap->set_transparent_pen(0);
+	m_bg_tilemap->set_scroll_cols(36);
+}
+
+
+void pac4eva_state::draw_sprites(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+{
+	uint8_t *spriteram = m_spriteram;
+	uint8_t *spriteram_2 = m_spriteram2;
+
+	// Open the sprite clip to the full rendered bitmap so absolute-positioned actors are
+	// never dropped anywhere on the static maze. &= cliprect still bounds it to the screen.
+	rectangle spriteclip(0, 36*8-1, 0, 56*8-1);
+	spriteclip &= cliprect;
+
+	// One sprite draw, shared by the hardware and extended loops below.
+	auto plot = [&] (int code, int color, uint8_t fx, uint8_t fy, int sx, int sy)
+	{
+		m_gfxdecode->gfx(1)->transmask(bitmap, spriteclip, code, color, fx, fy, sx, sy,
+				m_palette->transpen_mask(*m_gfxdecode->gfx(1), color & 0x3f, 0));
+	};
+
+	// Absolute Y, plus the 3-region shift: colour bit5 = region B (+256), bit6 = region C (-256).
+	// 75 is the render-align constant (-31 + 106); it replaces the stock +0x6a scroll shift so
+	// coordinates stay native. The hardware scroll is deliberately NOT added.
+	auto sprite_y = [] (uint8_t coord, uint8_t color) -> int
+	{
+		int sy = coord + 75;
+		if (color & 0x20) sy += 256;
+		else if (color & 0x40) sy -= 256;
+		return sy;
+	};
+
+	/* Draw the sprites. Note that it is important to draw them exactly in this */
+	/* order, to have the correct priorities. */
+	// No wraparound duplicate: jrpacman wraps along the other axis (the region system handles
+	// it), and the legacy double-draw ghosts sprites parked in the bottom strip.
+	for (int offs = m_spriteram.bytes() - 2; offs > 2*2; offs -= 2)
+	{
+		int sx = 272 - spriteram_2[offs + 1];
+		int sy = sprite_y(spriteram_2[offs], spriteram[offs + 1]);
+
+		uint8_t fx = spriteram[offs] & 1;
+		uint8_t fy = spriteram[offs] & 2;
+
+		int color = (spriteram[offs + 1] & 0x1f) | (m_colortablebank << 5) | (m_palettebank << 6);
+		// Colour bit7 promotes this one sprite to the high half of the current bank; sprhi
+		// supplies bit 8 of the code, reaching the full 256-shape set. In-game actors leave
+		// sprhi clear so they stay in shapes 0-127.
+		int code = (spriteram[offs] >> 2)
+				| ((m_spritebank | ((spriteram[offs + 1] >> 7) & 1)) << 6)
+				| ((m_sprhi ? (m_sprhi[offs >> 1] & 1) : 0) << 7);
+
+		plot(code, color, fx, fy, sx, sy);
+	}
+
+	/* In the Pac Man based games (NOT Pengo) the first two sprites must be offset */
+	/* one pixel to the left to get a more correct placement */
+	for (int offs = 2*2; offs >= 0; offs -= 2)
+	{
+		int sx = 272 - spriteram_2[offs + 1];
+		int sy = sprite_y(spriteram_2[offs], spriteram[offs + 1]);
+
+		uint8_t fx = spriteram[offs] & 1;
+		uint8_t fy = spriteram[offs] & 2;
+
+		int color = (spriteram[offs + 1] & 0x1f) | (m_colortablebank << 5) | (m_palettebank << 6);
+		int code = (spriteram[offs] >> 2)
+				| ((m_spritebank | ((spriteram[offs + 1] >> 7) & 1)) << 6)
+				| ((m_sprhi ? (m_sprhi[offs >> 1] & 1) : 0) << 7);
+
+		plot(code, color, fx, fy, sx, sy + m_xoffsethack);
+	}
+
+	// The 2 EXTENDED software sprites (slots 8,9) from spritext at 0x4b00, 4 bytes each:
+	// [img, colour, sy_src, sx_src]. Same alignment, region, bank and flip rules as the
+	// hardware sprites, giving 4 players + 5 ghosts + fruit = 10 on screen.
+	if (m_spritext)
+	{
+		for (int e = 1; e >= 0; e--)
+		{
+			uint8_t img = m_spritext[e*4+0];
+			if (!img) continue;                 // img 0 = inactive
+			uint8_t col = m_spritext[e*4+1];
+
+			int sy = sprite_y(m_spritext[e*4+2], col);
+			int sx = 272 - m_spritext[e*4+3];
+
+			int color = (col & 0x1f) | (m_colortablebank << 5) | (m_palettebank << 6);
+			int code  = (img >> 2)
+					| ((m_spritebank | ((col >> 7) & 1)) << 6)
+					| ((m_sprhi ? (m_sprhi[8 + e] & 1) : 0) << 7);
+
+			plot(code, color, img & 1, img & 2, sx, sy);
+		}
+	}
+}
+
+
+uint32_t pac4eva_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
+{
+	if (m_bgpriority != 0)
+		bitmap.fill(0, cliprect);
+	else
+		m_bg_tilemap->draw(screen, bitmap, cliprect, TILEMAP_DRAW_OPAQUE, 0);
+
+	if (m_spriteram != nullptr)
+		draw_sprites(screen, bitmap, cliprect);
+
+	if (m_bgpriority != 0)
+		m_bg_tilemap->draw(screen, bitmap, cliprect, 0, 0);
+
+	return 0;
 }
 
 
@@ -268,8 +517,9 @@ void pac4eva_state::pac4eva(machine_config &config)
 	// now-wide playfield into a portrait window. Square pixels make the window adopt the
 	// true 432x288 wide proportion after ROT90.
 	m_screen->set_physical_aspect(288, 432);
+	m_screen->set_screen_update(FUNC(pac4eva_state::screen_update));
 
-	MCFG_VIDEO_START_OVERRIDE(pac4eva_state,jrpacman)
+	MCFG_VIDEO_START_OVERRIDE(pac4eva_state,pac4eva)
 }
 
 
