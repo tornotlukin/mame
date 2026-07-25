@@ -51,11 +51,12 @@
     *
      * DSW1 (all bits are inverted)
      * bit 7 :  ?
-     * bit 6 :  difficulty level
-     *                       1 = Normal  0 = Harder
-     * bit 5 :\ bonus pac at xx000 pts
-     * bit 4 :/ 00 = 10000  01 = 15000  10 = 20000  11 = 30000
-     * bit 3 :\ nr of lives
+     * bit 6 :\ pac-man-4ever: DIFFICULTY (4-way; replaces the stock 1-bit difficulty and
+     * bit 5 :/ the stock bonus-pac bits). 00 = Ramp (DEFAULT, progressive)
+     *          01 = Easy   10 = Medium   11 = Hard  (each PINS one ramp entry)
+     *          Read by tools/asm/tourdiff.asm with mask 0x60 - KEEP THE TWO IN SYNC.
+     * bit 4 :  pac-man-4ever: IMMUNITY (testing) - was the bonus-pac low bit
+     * bit 3 :\ nr of lives (per round)
      * bit 2 :/ 00 = 1  01 = 2  10 = 3  11 = 5
      * bit 1 :\ play mode
      * bit 0 :/ 00 = free play   01 = 1 coin 1 credit
@@ -236,12 +237,19 @@ static INPUT_PORTS_START( jrpacman )
 	PORT_DIPNAME( 0x10, 0x00, "Immunity (Testing)" )        PORT_DIPLOCATION("SW1:5")
 	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x10, DEF_STR( On ) )
-	PORT_DIPNAME( 0x20, 0x00, DEF_STR( Unused ) )           PORT_DIPLOCATION("SW1:6")
-	PORT_DIPSETTING(    0x00, DEF_STR( Off ) )
-	PORT_DIPSETTING(    0x20, DEF_STR( On ) )
-	PORT_DIPNAME( 0x40, 0x40, DEF_STR( Difficulty ) )       PORT_DIPLOCATION("SW1:7")
-	PORT_DIPSETTING(    0x40, DEF_STR( Normal ) )
-	PORT_DIPSETTING(    0x00, DEF_STR( Hard ) )
+	// pac-man-4ever: the STOCK Difficulty DIP (SW1:7, mask 0x40) is REMOVED and replaced by
+	// our own 4-way difficulty scale spanning SW1:6+7 (mask 0x60). Owning this definition is
+	// the point: the stock entry defaulted to 0x40 (ON), so the ROM's two-bit read saw a
+	// difficulty tier at boot and pinned EVERY round at max difficulty - the v1 "ghosts only
+	// scared for a second" bug. Default is now 0x00 = Ramp, and the ROM (tools/asm/tourdiff.asm)
+	// reads the same 0x60 mask. KEEP THESE TWO IN SYNC - see docs/maze-mechanics.md ADDENDUM I.
+	//   00 = Ramp   (progressive: one difficulty step every N rounds)
+	//   20 = Easy   |  40 = Medium  |  60 = Hard   (each PINS one ramp entry for the whole game)
+	PORT_DIPNAME( 0x60, 0x00, DEF_STR( Difficulty ) )       PORT_DIPLOCATION("SW1:6,7")
+	PORT_DIPSETTING(    0x00, "Ramp (progressive)" )
+	PORT_DIPSETTING(    0x20, "Easy (fixed)" )
+	PORT_DIPSETTING(    0x40, "Medium (fixed)" )
+	PORT_DIPSETTING(    0x60, "Hard (fixed)" )
 	PORT_DIPNAME( 0x80, 0x80, DEF_STR( Unknown ) )          PORT_DIPLOCATION("SW1:8")
 	PORT_DIPSETTING(    0x80, DEF_STR( Off ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( On ) )
