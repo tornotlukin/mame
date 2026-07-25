@@ -7,7 +7,7 @@
     deliberately excluded so the UI shows only these five titles.
 *******************************************************************************/
 
-@source:pacman/jrpacman.cpp
+@source:pacman/pac4eva.cpp
 pac4eva          // Pac-Man 4 EVA
 
 @source:capcom/cps2.cpp

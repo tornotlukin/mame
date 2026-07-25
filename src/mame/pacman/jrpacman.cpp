@@ -144,10 +144,10 @@ void jrpacman_state::main_map(address_map &map)
 	map(0x5000, 0x503f).portr("P1");
 	map(0x5000, 0x5007).w("latch1", FUNC(ls259_device::write_d0));
 	map(0x5040, 0x507f).portr("P2");
-	map(0x5040, 0x505f).w(m_namco_sound, FUNC(namco_device::pacman_sound_w));
+	map(0x5040, 0x505f).w(m_namco_sound, FUNC(namco_wsg_device::pacman_sound_w));
 	map(0x5060, 0x506f).writeonly().share("spriteram2");
 	map(0x5070, 0x5077).w("latch2", FUNC(ls259_device::write_d0));
-	map(0x5080, 0x50bf).portr("DSW");
+	map(0x5080, 0x50bf).portr("DSW1");
 	map(0x5080, 0x5080).w(FUNC(jrpacman_state::jrpacman_scroll_w));
 	map(0x50c0, 0x50c0).w(m_watchdog, FUNC(watchdog_timer_device::reset_w));
 	map(0x8000, 0xdfff).rom();
@@ -193,7 +193,7 @@ static INPUT_PORTS_START( jrpacman )
 	PORT_DIPSETTING(    0x80, DEF_STR( Upright ) )
 	PORT_DIPSETTING(    0x00, DEF_STR( Cocktail ) )
 
-	PORT_START("DSW")
+	PORT_START("DSW1")
 	PORT_DIPNAME( 0x03, 0x01, DEF_STR( Coinage ) )          PORT_DIPLOCATION("SW1:1,2")
 	PORT_DIPSETTING(    0x03, DEF_STR( 2C_1C ) )
 	PORT_DIPSETTING(    0x01, DEF_STR( 1C_1C ) )
@@ -264,15 +264,17 @@ GFXDECODE_END
 
 void jrpacman_state::jrpacman(machine_config &config)
 {
-	/* basic machine hardware */
-	Z80(config, m_maincpu, 18432000/6);    /* 3.072 MHz */
+	pacman(config);
+
+	// basic machine hardware
 	m_maincpu->set_addrmap(AS_PROGRAM, &jrpacman_state::main_map);
 	m_maincpu->set_addrmap(AS_IO, &jrpacman_state::port_map);
-	m_maincpu->set_irq_acknowledge_callback(FUNC(jrpacman_state::interrupt_vector_r));
+
+	config.device_remove("mainlatch");
 
 	ls259_device &latch1(LS259(config, "latch1")); // 5P
 	latch1.q_out_cb<0>().set(FUNC(jrpacman_state::irq_mask_w));
-	latch1.q_out_cb<1>().set("namco", FUNC(namco_device::sound_enable_w));
+	latch1.q_out_cb<1>().set("namco", FUNC(namco_wsg_device::sound_enable_w));
 	latch1.q_out_cb<3>().set(FUNC(jrpacman_state::flipscreen_w));
 	latch1.q_out_cb<7>().set(FUNC(jrpacman_state::coin_counter_w));
 
@@ -283,29 +285,10 @@ void jrpacman_state::jrpacman(machine_config &config)
 	latch2.q_out_cb<4>().set(FUNC(jrpacman_state::jrpacman_charbank_w));
 	latch2.q_out_cb<5>().set(FUNC(jrpacman_state::jrpacman_spritebank_w));
 
-	WATCHDOG_TIMER(config, m_watchdog);
-
-	/* video hardware */
-	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
-	m_screen->set_refresh_hz(60.606060);
-	m_screen->set_vblank_time(ATTOSECONDS_IN_USEC(2500)); /* not accurate */
-	m_screen->set_size(36*8, 28*8);
-	m_screen->set_visarea(0*8, 36*8-1, 0*8, 28*8-1);
-	m_screen->set_screen_update(FUNC(jrpacman_state::screen_update_pacman));
-	m_screen->set_palette(m_palette);
-	m_screen->screen_vblank().set(FUNC(jrpacman_state::vblank_irq));
-
-	GFXDECODE(config, m_gfxdecode, m_palette, gfx_jrpacman);
-	PALETTE(config, m_palette, FUNC(jrpacman_state::pacman_palette), 128 * 4, 32);
+	// video hardware
+	m_gfxdecode->set_info(gfx_jrpacman);
 
 	MCFG_VIDEO_START_OVERRIDE(jrpacman_state,jrpacman)
-
-	/* sound hardware */
-	SPEAKER(config, "mono").front_center();
-
-	NAMCO(config, m_namco_sound, 3072000/32);
-	m_namco_sound->set_voices(3);
-	m_namco_sound->add_route(ALL_OUTPUTS, "mono", 1.0);
 }
 
 
@@ -345,33 +328,6 @@ ROM_START( jrpacman )
 	ROM_LOAD_NIB_LOW ( "a290-27axv-bxhd.9e", 0x0000, 0x0100, CRC(029d35c4) SHA1(d9aa2dc442e9ac36cf3c346b9fb1aa745eaf3cb8) ) /* color palette (low bits) */
 	ROM_LOAD_NIB_HIGH( "a290-27axv-cxhd.9f", 0x0000, 0x0100, CRC(eee34a79) SHA1(7561f8ccab2af85c111af6a02af6986eb67503e5) ) /* color palette (high bits) */
 	ROM_LOAD( "a290-27axv-axhd.9p",          0x0020, 0x0100, CRC(9f6ea9d8) SHA1(62cf15513934d34641433c891a7f73bef82e2fb1) ) /* color lookup table */
-
-	ROM_REGION( 0x0200, "namco", 0 )
-	ROM_LOAD( "a290-27axv-dxhd.7p",          0x0000, 0x0100, CRC(a9cc86bf) SHA1(bbcec0570aeceb582ff8238a4bc8546a23430081) ) /* waveform */
-	ROM_LOAD( "a290-27axv-exhd.5s",          0x0100, 0x0100, CRC(77245b66) SHA1(0c4d0bee858b97632411c440bea6948a74759746) ) /* timing - not used */
-ROM_END
-
-// pac4eva: "Pac-Man 4 EVA" (TORNOTLUKIN, 2026) — pac-man-4ever standalone set. Same board
-// as jrpacman with the two expansion ROMs REQUIRED (not optional) and the L1 256-sprite gfx
-// layout. Self-contained (parent 0) so it ships in the curated Modalicious build alone.
-ROM_START( pac4eva )
-	ROM_REGION( 0x10000, "maincpu", 0 )
-	ROM_LOAD( "jr.pac-man_8d_11-9-83.8d",    0x0000, 0x2000, CRC(7799a7e6) SHA1(daa18744dd12743a5adc8cc43f780ae54cd14b3c) )
-	ROM_LOAD( "jr.pac-man_8e_11-9-83.8e",    0x2000, 0x2000, CRC(40cdad13) SHA1(9c55443f7207f97aee24e55c1ca0646367ccbefc) )
-	ROM_LOAD( "jr.pac-man_8h_11-9-83.8h",    0x8000, 0x2000, CRC(540a6039) SHA1(b061ca2ab893ebacdb67dd2646a8053be7e33373) )
-	ROM_LOAD( "jr.pac-man_8j_11-9-83.8j",    0xa000, 0x2000, CRC(e788dfe2) SHA1(fa705b1ff20846e876b83fb7e1182182b4043759) )
-	ROM_LOAD( "jr.pac-man_8k_11-9-83.8k",    0xc000, 0x2000, CRC(86516ff7) SHA1(df063ea4f23efdb7a311dece0068165aa077545f) )
-	ROM_LOAD( "pac4eva.6x",                  0x6000, 0x2000, CRC(7e680231) SHA1(8551e0f4e0fe5faab00a122333d370e8d526729d) ) // expansion ROM 2 (engine modules; plaintext)
-	ROM_LOAD( "pac4eva.8x",                  0xe000, 0x2000, CRC(adfbf49c) SHA1(b8315d3a743765b9f567c287dfb3f5ff23f2a85c) ) // expansion ROM (plaintext; decrypt table zero over 0xe000+)
-
-	ROM_REGION( 0x6000, "gfx1", 0 )   // L1 layout = tiles 0x2000 + sprites 0x4000 (256)
-	ROM_LOAD( "jr.pac-man_2c_11-9-83.2c",    0x0000, 0x2000, CRC(a624f5cb) SHA1(90809d9d30df183461c0c40f2da941a21fec6d5c) ) /* tiles (512) */
-	ROM_LOAD( "jr.pac-man_2e_11-9-83.2e",    0x2000, 0x4000, CRC(a9d761f8) SHA1(20090c5a98db98e5cc768f3c886cfff864dfcb64) ) /* sprites (256) */
-
-	ROM_REGION( 0x0120, "proms", 0 )
-	ROM_LOAD_NIB_LOW ( "a290-27axv-bxhd.9e", 0x0000, 0x0100, CRC(029d35c4) SHA1(d9aa2dc442e9ac36cf3c346b9fb1aa745eaf3cb8) ) /* color palette (low bits) */
-	ROM_LOAD_NIB_HIGH( "a290-27axv-cxhd.9f", 0x0000, 0x0100, CRC(eee34a79) SHA1(7561f8ccab2af85c111af6a02af6986eb67503e5) ) /* color palette (high bits) */
-	ROM_LOAD( "a290-27axv-axhd.9p",          0x0020, 0x0100, CRC(2313697c) SHA1(e52560acd0d83ee8121c0b8c4981fc26e0f51b66) ) /* color lookup table */
 
 	ROM_REGION( 0x0200, "namco", 0 )
 	ROM_LOAD( "a290-27axv-dxhd.7p",          0x0000, 0x0100, CRC(a9cc86bf) SHA1(bbcec0570aeceb582ff8238a4bc8546a23430081) ) /* waveform */
@@ -462,4 +418,3 @@ void jrpacman_state::init_jrpacman()
 
 GAME( 1983, jrpacman,  0,        jrpacman, jrpacman, jrpacman_state, init_jrpacman, ROT90, "Bally Midway", "Jr. Pac-Man (11/9/83)",      MACHINE_SUPPORTS_SAVE )
 GAME( 1983, jrpacmanf, jrpacman, jrpacman, jrpacman, jrpacman_state, init_jrpacman, ROT90, "hack",         "Jr. Pac-Man (speedup hack)", MACHINE_SUPPORTS_SAVE )
-GAME( 2026, pac4eva,   0,        jrpacman, jrpacman, jrpacman_state, init_jrpacman, ROT90, "TORNOTLUKIN",  "Pac-Man 4 EVA",              MACHINE_SUPPORTS_SAVE )

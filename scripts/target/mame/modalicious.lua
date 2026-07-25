@@ -56,6 +56,7 @@ function createProjects_mame_modalicious(_target, _subtarget)
         MAME_DIR .. "src/mame/capcom/kabuki.cpp",
         MAME_DIR .. "src/mame/capcom/kabuki.h",
         MAME_DIR .. "src/mame/pacman/jrpacman.cpp",
+        MAME_DIR .. "src/mame/pacman/pac4eva.cpp",
         MAME_DIR .. "src/mame/pacman/jumpshot.cpp",
         MAME_DIR .. "src/mame/pacman/jumpshot.h",
         MAME_DIR .. "src/mame/pacman/pacman.cpp",
