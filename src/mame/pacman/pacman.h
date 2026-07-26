@@ -31,8 +31,6 @@ public:
 		, m_watchdog(*this, "watchdog")
 		, m_spriteram(*this, "spriteram")
 		, m_spriteram2(*this, "spriteram2")
-		, m_spritext(*this, "spritext")
-		, m_sprhi(*this, "sprhi")
 		, m_s2650_spriteram(*this, "s2650_spriteram")
 		, m_videoram(*this, "videoram")
 		, m_colorram(*this, "colorram")
@@ -77,8 +75,6 @@ protected:
 	required_device<watchdog_timer_device> m_watchdog;
 	optional_shared_ptr<uint8_t> m_spriteram;
 	optional_shared_ptr<uint8_t> m_spriteram2;
-	optional_shared_ptr<uint8_t> m_spritext;   // pac-man-4ever: extended (software) sprites
-	optional_shared_ptr<uint8_t> m_sprhi;      // pac-man-4ever: per-sprite high bank (code bit7) for 256-sprite set; [0..7]=hw sprites, [8..9]=extended
 	optional_shared_ptr<uint8_t> m_s2650_spriteram;
 	required_shared_ptr<uint8_t> m_videoram;
 	optional_shared_ptr<uint8_t> m_colorram;
@@ -102,8 +98,6 @@ protected:
 	uint8_t m_bgpriority = 0;
 	int m_xoffsethack = 0;
 	uint8_t m_inv_spr = 0;
-	uint8_t m_jrpac_scroll = 0;   // pac-man-4ever: last value written to the scroll reg (0x5080)
-	uint8_t m_jrpac_abs = 0;      // pac-man-4ever: render sprite Y from the 9-bit absolute table at 0x4A00
 	uint8_t m_maketrax_counter = 0;
 	uint8_t m_maketrax_offset = 0;
 	int m_maketrax_disable_protection = 0;

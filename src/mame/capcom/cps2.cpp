@@ -657,11 +657,14 @@ public:
 		, m_region_key(*this, "key")
 		, m_comm(*this, "comm")
 		, m_digitalvol(*this, "DIGITALVOL")
+		, m_vs4p_playmode(*this, "PLAYMODE")
 		, m_paddle(*this, "PADDLE%u", 1U)
 	{ }
 
 	void cps2(machine_config &config) ATTR_COLD;
 	void cps2comm(machine_config &config) ATTR_COLD;
+	void cps2_4p_43(machine_config &config) ATTR_COLD; // 4-player, STOCK 4:3 (2v2 variants; NO widescreen)
+	void cps2_4p_duo(machine_config &config) ATTR_COLD; // 4-player 4-live DUO + widescreen (mvscduo standalone)
 	void gigaman2(machine_config &config) ATTR_COLD;
 	void dead_cps2(machine_config &config) ATTR_COLD;
 	void dead_cps2comm(machine_config &config) ATTR_COLD;
@@ -672,6 +675,12 @@ public:
 	void init_pzloop2() ATTR_COLD;
 	void init_singbrd() ATTR_COLD;
 	void init_ecofghtr() ATTR_COLD;
+	// 4-player 2v2 tag mod: one init per set, supplying that set's on-point gate addresses.
+	void init_vs4p(uint32_t gate1, uint32_t gate2) ATTR_COLD;
+	void init_xmvsf_4p() ATTR_COLD;
+	void init_mshvsf_4p() ATTR_COLD;
+	void init_mvsc2v2_4p() ATTR_COLD;
+	void init_mvscduo() ATTR_COLD;
 
 protected:
 	virtual void machine_start() override ATTR_COLD;
@@ -715,6 +724,16 @@ private:
 	void dead_cps2_map(address_map &map) ATTR_COLD;
 	void decrypted_opcodes_map(address_map &map) ATTR_COLD;
 
+	// 4-player 2v2 tag mod (VS trilogy). See the block comment above cps2_4p_in0_r.
+	void cps2_4p_map(address_map &map) ATTR_COLD;
+	bool vs4p_partner_on_point(int team);
+	uint16_t cps2_4p_in0_r();
+	uint16_t cps2_4p_in1_r();
+	uint16_t cps2_4p_in2_r();
+	// Work-RAM address of each team's on-point index. 0 = not yet mapped for this set, which
+	// leaves the mux inert and the game bit-for-bit stock.
+	uint32_t m_vs4p_gate[2] = { 0, 0 };
+
 	void init_cps2_video() ATTR_COLD;
 	void init_cps2crypt() ATTR_COLD;
 
@@ -727,6 +746,9 @@ private:
 	optional_device<cps2_comm_device> m_comm;
 
 	optional_ioport m_digitalvol;
+	// 1v1/2v2 selector. Present only on sets using cps2_4p6b_mode / cps2_4p6b_mode2v2. Absent
+	// everywhere else (including mvscduo), where read_safe(0) yields 1v1 and the mux stays inert.
+	optional_ioport m_vs4p_playmode;
 	optional_ioport_array<2> m_paddle;
 
 	// video-related
@@ -886,6 +908,13 @@ void cps2_state::cps2_render_sprites(screen_device &screen, bitmap_ind16 &bitmap
 	const int xoffs = 64 - m_output[CPS2_OBJ_XOFFS];
 	const int yoffs = 16 - m_output[CPS2_OBJ_YOFFS];
 
+	// Widescreen support (mvscduo): the visible window starts at raster 0, so sprite pieces
+	// straddling the LEFT screen edge must draw at negative X. Plain `& 0x3ff` maps -16..-1 to
+	// 0x3F0..0x3FF (far off the right side), which visibly crops fighters 16px per piece at the
+	// widescreen left edge. Re-interpret that top 16px band as negative instead. Harmless for the
+	// stock 4:3 sets: for them both -16..-1 and the 0..63 margin are outside the visible window.
+	auto wrapx = [](int v) { v &= 0x3ff; return (v >= 0x3f0) ? v - 0x400 : v; };
+
 #ifdef MAME_DEBUG
 	if (machine().input().code_pressed(KEYCODE_Z) && machine().input().code_pressed(KEYCODE_R))
 	{
@@ -928,7 +957,7 @@ void cps2_state::cps2_render_sprites(screen_device &screen, bitmap_ind16 &bitmap
 						const int sy = (y + nys * 16 + yoffs) & 0x3ff;
 						for (int nxs = 0; nxs < nx; nxs++)
 						{
-							const int sx = (x + nxs * 16 + xoffs) & 0x3ff;
+							const int sx = wrapx(x + nxs * 16 + xoffs);
 							DRAWSPRITE(
 									code + (nx - 1) - nxs + 0x10 * (ny - 1 - nys),
 									col,
@@ -944,7 +973,7 @@ void cps2_state::cps2_render_sprites(screen_device &screen, bitmap_ind16 &bitmap
 						const int sy = (y + nys * 16 + yoffs) & 0x3ff;
 						for (int nxs = 0; nxs < nx; nxs++)
 						{
-							const int sx = (x + nxs * 16 + xoffs) & 0x3ff;
+							const int sx = wrapx(x + nxs * 16 + xoffs);
 							DRAWSPRITE(
 									code + nxs + 0x10 * (ny - 1 - nys),
 									col,
@@ -963,7 +992,7 @@ void cps2_state::cps2_render_sprites(screen_device &screen, bitmap_ind16 &bitmap
 						const int sy = (y + nys * 16 + yoffs) & 0x3ff;
 						for (int nxs = 0; nxs < nx; nxs++)
 						{
-							const int sx = (x + nxs * 16 + xoffs) & 0x3ff;
+							const int sx = wrapx(x + nxs * 16 + xoffs);
 							DRAWSPRITE(
 									code + (nx - 1) - nxs + 0x10 * nys,
 									col,
@@ -979,7 +1008,7 @@ void cps2_state::cps2_render_sprites(screen_device &screen, bitmap_ind16 &bitmap
 						const int sy = (y + nys * 16 + yoffs) & 0x3ff;
 						for (int nxs = 0; nxs < nx; nxs++)
 						{
-							const int sx = (x + nxs * 16 + xoffs) & 0x3ff;
+							const int sx = wrapx(x + nxs * 16 + xoffs);
 							DRAWSPRITE(
 									//code + nxs + 0x10 * nys,
 									(code & ~0xf) + ((code + nxs) & 0xf) + 0x10 * nys, // pgear fix, same as CPS1?
@@ -998,7 +1027,7 @@ void cps2_state::cps2_render_sprites(screen_device &screen, bitmap_ind16 &bitmap
 					code,
 					col,
 					flipx, flipy,
-					(x + xoffs) & 0x3ff, (y + yoffs) & 0x3ff);
+					wrapx(x + xoffs), (y + yoffs) & 0x3ff);
 		}
 	}
 #undef DRAWSPRITE
@@ -1312,6 +1341,206 @@ void cps2_state::cps2_map(address_map &map)
 {
 	cps2_base_map(map);
 	map(0xff0000, 0xffffff).ram();                                                                                                    // RAM
+}
+
+// --- 4-player 2v2 tag mod (xmvsf) ---
+// Teams P1+P3 vs P2+P4. Each team shows one "point" character at a time. Ownership follows the
+// CHARACTER, not the slot: P1/P2 own the STARTING (first-selected) character; P3/P4 own the
+// PARTNER (second-selected). So we route the partner's pad into the game's P1/P2 bit-field only
+// while the partner's character is the active point fighter.
+//
+// ---------------------------------------------------------------------------------------------
+// 4-player 2v2 tag mod (VS trilogy: xmvsf, mshvsf, mvsc). Teams are P1+P3 vs P2+P4.
+//
+// HOW THESE GAMES TAG: the engine moves the CHARACTER, not the input routing. Each side has one
+// slot the game always drives, and tagging swaps character state into it -- so P1 always drives
+// team 1's active fighter whoever that currently is, and P2 always drives team 2's. That is what
+// makes a port-level mux viable at all: there is no per-character input pointer to chase, only
+// one byte per team saying whether the partner is currently the one in.
+//
+// THE THREE TITLES DO NOT SHARE A LAYOUT -- only the engine skeleton. Do not port addresses
+// between them without first confirming the structure is shared:
+//   xmvsf : four fixed slots. Tag routine @0x010250 exchanges fields FF4000<->FF4800 (team 1)
+//           and FF4400<->FF4C00 (team 2). On-point index = +0x220 of the active slot, reads 0/1.
+//   mshvsf: an indexed ARRAY at FF3800, stride 0x400, slot index read from +0x94
+//           (move.b $94(aN),d0; ror.w #6,d0; lea base -> base + idx*0x400). xmvsf's +0x220 field
+//           does NOT exist here and its tag routine has no counterpart. Gate reads 3, not 1.
+//   mvsc  : same indexed-array scheme as mshvsf, base FF3000. Because the indexing CODE was
+//           confirmed identical first, mshvsf's gate offsets ported to it directly.
+//
+// THE MOD: when a team's partner is on point, substitute that team's second player's pad for
+// the first player's bits in the stock port reads. The benched player's pad going dead is the
+// intended behaviour -- control follows the character to its owner.
+//
+// P3/P4 pads live in their own ioports (IN_P3/IN_P4) and are ALSO memory-mapped at 0x804050/
+// 0x804052 (an unmapped gap on CPS2). The mapping is not needed by the mux; it exists so the
+// pads can be read directly -- from a Lua probe or the debugger -- to tell "P3 isn't wired up"
+// apart from "the gate never fired", which is otherwise very hard to distinguish.
+//
+// WHY NOT A ROM PATCH: a driver change is not a preference, it is forced. CPS2 has three input
+// registers and a 6-button game already spends them (IN0 = P1+P2 sticks + buttons 1-3, IN1 =
+// their buttons 4-6, and P2's button 6 does not even fit -- it lives in IN2 at 0x4000).
+// 4 players x (4 dirs + 6 buttons) = 40 bits; IN0+IN1 provide 32. Players 3 and 4 cannot exist
+// on this board, so no program patch can add them -- only the driver can invent the inputs.
+// Given that, the routing may as well live here too, which keeps the games' ROMs stock.
+// NOTE: this mod therefore runs in MAME only; it cannot work on real CPS2 hardware.
+//
+// HISTORY (do not regress): an earlier revision gated on FF4444/FF4C44, believing xmvsf's
+// fighter structs were team-major. They are not -- that map paired bytes from two DIFFERENT
+// teams, so the "flag" appeared to churn at random and the mux flickered. The approach was
+// sound; one address was wrong. Every gate here is verified live by a self-driving test
+// (14 assertions per game: gate on/off, partner drives, benched pad dead, both directions).
+//
+// --- STAGE 2 (in progress on mvsc): all four fighters live at once -----------------------------
+// Found 2026-07-16, Lua-prototyped, not yet in this driver. Recorded here because the eventual
+// C++ lands in this file and the facts below are load-bearing.
+//
+// HOW MVSC ROUTES INPUT: one reader routine (0x1367E) runs per fighter per frame. It picks the
+// fighter's input word through a pointer table @0x136F4 indexed by struct byte +0x02 ("which pad
+// drives me": 0 -> FF444C, 1 -> FF444E); +0x03 selects human path vs CPU/AI path. Cur/prev/edge
+// input words are per-fighter IN THE STRUCT (+0xD0..+0xDA). In 2P play all four fighter slots
+// take the human path with pad indices 0/1/0/1 -- a Duo partner reads its team's word, which is
+// the entire "both characters move as one" problem.
+//
+// THE PLANNED PATCH (all inside m_decrypted_opcodes; ROMs stay stock, dipswitch-gateable):
+//   * stub at 0x3FF000 (dead 0xFF fill) carrying its OWN 4-entry pointer table:
+//     pads 0/1 -> FF444C/FF444E; pads 2/3 -> this driver's raw P3/P4 ports at 804050/804052
+//     plus a not.w (ports are active-low; the caller's andi #$77f masks).
+//   * 0x13698: movea.l $136f4(pc,d0.w),a0 + move.w (a0),d0 (6 bytes) -> jsr $3ff000.l (6 bytes).
+//   * giving a fighter to P3/P4 is then ONE RAM BYTE: FF3802=2 / FF3C02=3.
+//
+// !! ENCRYPTION RULE (a v1 stub crashed on this): the 68000 routes PC-RELATIVE operand reads
+// through the OPCODE space, so Capcom stores data tables INSIDE the encrypted region and reads
+// them (pc)-relative -- the table @136F4 is ciphertext to a normal (An) data read. Any relocated
+// pc-relative code must keep such reads pc-relative, or embed its data with the code in the
+// decrypted buffer (the stub embeds). Symptom otherwise: garbage pointer -> address error the
+// first time a human fighter polls input (attract fighters are CPU-driven and never hit it).
+//
+// MVSC 4-LIVE COSMETIC STATE (for the C++ port of the mode; all user-verified in Lua):
+//   * 1P/2P OVER-HEAD marker arrows (Duo-Mode only): permanent pool objects in FF8000-FFDFxx
+//     with handler ptr +0x34 in {0x86EF0, 0x86F08}; visibility = object +0x04. FLICKER-FREE
+//     removal (user-verified) = a WRITE-TAP on each marker's +0x04 that forces 0 (returns 0),
+//     so the enable value never lands -> the arrow never draws. Rescan the pool periodically
+//     to tap respawns. Do NOT touch the OFF-SCREEN LOCATOR arrow (bottom-of-screen, points to
+//     an out-of-view opponent on super-jump) -- it is a DIFFERENT handler and is desirable.
+//     Driver port: space.install_write_tap() on the marker +0x04, same as the Lua reference.
+//     (A per-frame zero of +0x04 also works but flickers on the KO re-enable; use the tap.)
+//   * duo bg effect: video staging FF443E committed to reg 0x804166, gated by FF4445/FF4439 --
+//     clear the GATES to restore the stage backdrop (writing the staged VALUE blanks the layer).
+//   * duo timer bar: starves when the singleton duo timers FF4034/FF4036 are zero.
+//   * top-HUD (health bar art) kill switch if ever needed: beq->bra at 0x249DA skips the
+//     staged-sprite copy from GFX-RAM 0x924000 (count word at FFF640).
+//   * KO JUMP-IN CUT (user-verified): on KO the surviving partner (already on the field)
+//     plays the stock entry jump-in. Trigger is NOT FF4022 (status word), the +0x26A "enter
+//     field" command byte, or the 0x7B934 controller spawn -- all tested dead ends. Real
+//     path (found live: bp 0x15EE4 entry-teleport + history): dying fighter gets command 4
+//     at +0x266 -> dispatcher 0xD6F6 -> 0x15B76 (death bookkeeping) -> 0x15BA8 `movea.l
+//     $284(a6),a6` switches to the partner and runs its entry init (teleport to camX+0x210
+//     via 0x15EBE, entry velocity). THE CUT: 0x15BA8 `2C6E 0284` -> `6000 0106` (bra.w
+//     $15CB0) skips ONLY the partner-entry block, keeping all death bookkeeping and the
+//     partner-dead branch 0x15CB4. The engine's own point-status transfer then does the
+//     right thing (survivor inherits point + camera focus). Decrypted-buffer patch.
+//   * WIDESCREEN WALLS (goes with the 512px set_raw in cps2_4p below; user-verified): fighter
+//     X is in STAGE coordinates; the screen-edge clamp is camera-relative, in the common
+//     movement routine at 0x13AE2: a0 = ptrtable[0x2563A + stage*4] -> struct whose word +0
+//     is the camera X; left wall = camX + imm@0x13AF6 (stock 0x55), right wall = camX +
+//     imm@0x13B0A (stock 0x1AB) -- both 0x15 (21px) inside the stock 384px edges. For the
+//     full 512px view patch the two immediates (decrypted buffer) to 0x15 / 0x1EB: same
+//     margins, walkable 342px -> 470px. Struct byte +0xB9 = touching-wall flag (2=L, 1=R).
+//   * WIDESCREEN CAMERA CLAMP (user-verified; goes with the 512px view): the 512px window
+//     over-scrolls past the tilemap at stage ends because the game's camera-scroll clamp is
+//     tuned for the 384px window. The clamp is at 0xCCB68: camera obj (a6) target +0x76 is
+//     limited between +0x68 (min bound, = -0x40 at stage left) and +0x6A (max bound, per
+//     stage), result -> +0xC, then staged to FF443A (scroll1 X) by 0xCB94A. Bounds are
+//     register-loaded (no immediate to patch) and the camera obj address is DYNAMIC, so the
+//     fix is a CODE-CAVE: hijack 0xCCB68 with `jsr <cave>` + `bra $ccb86`; the cave re-runs
+//     the clamp with min +0x40 / max -0x40 (pull each scroll limit in 64px = the 512-384
+//     extra-width, 64/side). Kills the corner void. NOTE (still open): after this, the
+//     PARALLAX SCROLL PLANES still render within 4:3 -- the per-plane draw/scroll width is
+//     tied to 384px; widening the visible raster (set_raw) did not widen the plane draw
+//     window. That is a separate driver/video fix (scroll-plane render width vs 512 raster).
+//   * SCREEN-ANCHORED SPECIALS (user-verified both facings): a handful of moves anchor to
+//     the screen edge via the idiom `d0 = camX (same 0x2563A struct); addi.w #$40 (left
+//     edge); if facing (+0x4B==0 means facing left): addi.w #$180 (right edge)`. Exactly 7
+//     sites ROM-wide; Jin's Blodia Punch owns 4 (calcs 0x9F05A/0x9F230/0x9E10A + the
+//     BINDING travel cap, a cmpi/move #$150 pair on ext +0xC2 at 0x9F14C/0x9F154; the
+//     0x160/0x80 caps beside the calcs never bind). Widescreen: 0x40->0x00, 0x180->0x200,
+//     cap 0x150->0x1D0 (tip = edge+0x30, stock proportion). A full-ROM idiom scan found only
+//     8 edge sites; the other CAPPED screen-filler is a SHARED screen-super routine at
+//     0x79DE0 (anchor +0xC0, ext +0xC2, cap 0x160): patch it the same way (0x40->0x00,
+//     0x180->0x200, cap 0x160->0x200) and ONE patch widens Captain Commando's Captain Sword,
+//     Gambit's Royal Flush, War Machine's Proton Cannon, etc. (user-verified 2026-07-17).
+//     The rest are movement (dash-to-edge velocity 0x38934/0x38F9C/0x92136, facing +0xB3,
+//     no cap) + Jin teleport 0x9E54E -- NOT screen-fillers, leave them. Fighter-relative
+//     moves and travel-till-offscreen projectiles need NO changes. Arm objects: script ptr
+//     +0x68 (character-script pointer, not 68k code), X +0x0C, owner +0x54, ext +0xC2.
+//
+// !! PAD-BYTE RULE (found via live debugger; a v2 stub broke the hit system on this): mvsc's
+// collision-side registration (0x4AB4) does `tst.b ($2,a6)` -- fighter struct +0x02 (the pad
+// index) doubles as the TEAM SIDE: zero = side A, nonzero = side B. Giving partners pad
+// indices 2/3 puts both on side B -> most attack pairs stop interacting and P1 gains friendly
+// fire. Therefore +0x02 must stay 0/1 FOREVER. STUB v3 (user-verified in Lua, probe47) routes
+// input by SLOT ADDRESS instead: the reader stub compares a6 against 0xFF3800/0xFF3C00 and
+// serves the raw P3/P4 ports (804050/804052, not.w for polarity) for those fighters, the
+// original word table for everyone else. Control then follows the CHARACTER (P3 always drives
+// the team's second pick, through tags and duos) -- for mvsc this also supersedes the port mux
+// below, which the C++ port of the 4-live mode should disable/bypass on that set.
+bool cps2_state::vs4p_partner_on_point(int team)
+{
+	// "Play Mode" = 1v1, or no selector on this set (mvscduo) -> P1/P2 pass through untouched.
+	// Same inert path as an unmapped gate, so a 1v1 launch is bit-for-bit the stock game.
+	if (!(m_vs4p_playmode.read_safe(0) & 0x01))
+		return false;
+	if (!m_vs4p_gate[team])
+		return false;                       // set not mapped yet -> stay stock
+	return m_maincpu->space(AS_PROGRAM).read_byte(m_vs4p_gate[team]) != 0;
+}
+
+// IN0: P1 = low byte, P2 = high byte (4 dirs + buttons 1-3 each).
+// IN_P3/IN_P4 mirror the game's own 11-bit word layout, so their low byte matches IN0's.
+uint16_t cps2_state::cps2_4p_in0_r()
+{
+	uint16_t r = ioport("IN0")->read();
+	if (vs4p_partner_on_point(0))
+		r = (r & 0xff00) | (ioport("IN_P3")->read() & 0x00ff);          // P3 takes over P1's bits
+	if (vs4p_partner_on_point(1))
+		r = (r & 0x00ff) | ((ioport("IN_P4")->read() & 0x00ff) << 8);   // P4 takes over P2's bits
+	return r;
+}
+
+// IN1: P1 buttons 4-6 = bits 0-2, P2 buttons 4-5 = bits 4-5 (P2's button 6 did not fit here --
+// it lives in IN2, see below). In IN_P3/IN_P4, buttons 4-6 are bits 8-10.
+uint16_t cps2_state::cps2_4p_in1_r()
+{
+	uint16_t r = ioport("IN1")->read();
+	if (vs4p_partner_on_point(0))
+		r = (r & 0xfff8) | ((ioport("IN_P3")->read() >> 8) & 0x0007);   // P3 buttons 4-6
+	if (vs4p_partner_on_point(1))
+		r = (r & 0xffcf) | ((ioport("IN_P4")->read() >> 4) & 0x0030);   // P4 buttons 4-5
+	return r;
+}
+
+// IN2 carries P2's button 6 at 0x4000 (alongside EEPROM/coins/starts/service) because IN1 ran
+// out of room in the 6-button layout. P4 needs it too, or it could not complete FP+FK to tag.
+uint16_t cps2_state::cps2_4p_in2_r()
+{
+	uint16_t r = ioport("IN2")->read();
+	if (vs4p_partner_on_point(1))
+	{
+		const uint16_t b6 = (ioport("IN_P4")->read() >> 10) & 1;        // active-low: 0 = pressed
+		r = (r & 0xbfff) | (b6 << 14);
+	}
+	return r;
+}
+
+void cps2_state::cps2_4p_map(address_map &map)
+{
+	cps2_map(map);
+	map(0x804000, 0x804001).r(FUNC(cps2_state::cps2_4p_in0_r));
+	map(0x804010, 0x804011).r(FUNC(cps2_state::cps2_4p_in1_r));
+	map(0x804020, 0x804021).r(FUNC(cps2_state::cps2_4p_in2_r));
+	map(0x804050, 0x804051).portr("IN_P3");   // raw pads, for probes/debugger (see block comment)
+	map(0x804052, 0x804053).portr("IN_P4");
 }
 
 void cps2_state::cps2_comm_map(address_map &map)
@@ -1633,6 +1862,136 @@ static INPUT_PORTS_START( cps2_2p6b )
 	PORT_BIT( 0x4000, IP_ACTIVE_LOW, IPT_BUTTON6 ) PORT_PLAYER(2)
 INPUT_PORTS_END
 
+// 4 players, 6 buttons — 2v2 tag mod (VS trilogy: xmvsf, mshvsf, mvsc).
+// Teams are P1+P3 vs P2+P4; P3/P4 drive each team's SECOND (tagged-in) character.
+//
+// IN0/IN1/IN2 are left completely STOCK, so P1/P2 behave exactly as on unmodified hardware.
+// P3/P4 instead get their own read-only registers (IN_P3 @0x804050, IN_P4 @0x804052) in the
+// unmapped 0x804050-0x80409f gap of the CPS2 I/O map. A new register is required, not a
+// preference: CPS2's native 4-player wiring puts P3/P4 in IN1, but a 6-button game already
+// spends IN1 on buttons 4-6 (P2's button 6 doesn't even fit — it lives in IN2 at 0x4000).
+// 4 players x (4 dirs + 6 buttons) = 40 bits > the 32 bits IN0+IN1 provide.
+//
+// The bit layout below deliberately MIRRORS the 11-bit word the game itself builds in work RAM
+// (see the master input routine: word = (IN1_low << 8) | IN0_low, then NOT + AND #$7ff):
+//   bit0 Right, 1 Left, 2 Down, 3 Up, 4 B1, 5 B2, 6 B3, (7 unused), 8 B4, 9 B5, 10 B6
+// Active-low like every other CPS2 input. Mirroring the layout keeps the companion ROM patch
+// down to: move.w <reg>,d0 / not.w d0 / andi.w #$7ff,d0 / move.w d0,<player word>.
+static INPUT_PORTS_START( cps2_4p6b )
+	PORT_INCLUDE(cps2_2p6b)
+
+	PORT_START("IN_P3")
+	PORT_BIT( 0x0001, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT ) PORT_8WAY PORT_PLAYER(3)
+	PORT_BIT( 0x0002, IP_ACTIVE_LOW, IPT_JOYSTICK_LEFT ) PORT_8WAY PORT_PLAYER(3)
+	PORT_BIT( 0x0004, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_8WAY PORT_PLAYER(3)
+	PORT_BIT( 0x0008, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_8WAY PORT_PLAYER(3)
+	PORT_BIT( 0x0010, IP_ACTIVE_LOW, IPT_BUTTON1 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0020, IP_ACTIVE_LOW, IPT_BUTTON2 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0040, IP_ACTIVE_LOW, IPT_BUTTON3 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0080, IP_ACTIVE_LOW, IPT_UNUSED )
+	PORT_BIT( 0x0100, IP_ACTIVE_LOW, IPT_BUTTON4 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0200, IP_ACTIVE_LOW, IPT_BUTTON5 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0400, IP_ACTIVE_LOW, IPT_BUTTON6 ) PORT_PLAYER(3)
+	PORT_BIT( 0xf800, IP_ACTIVE_LOW, IPT_UNUSED )
+
+	PORT_START("IN_P4")
+	PORT_BIT( 0x0001, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT ) PORT_8WAY PORT_PLAYER(4)
+	PORT_BIT( 0x0002, IP_ACTIVE_LOW, IPT_JOYSTICK_LEFT ) PORT_8WAY PORT_PLAYER(4)
+	PORT_BIT( 0x0004, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_8WAY PORT_PLAYER(4)
+	PORT_BIT( 0x0008, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_8WAY PORT_PLAYER(4)
+	PORT_BIT( 0x0010, IP_ACTIVE_LOW, IPT_BUTTON1 ) PORT_PLAYER(4)
+	PORT_BIT( 0x0020, IP_ACTIVE_LOW, IPT_BUTTON2 ) PORT_PLAYER(4)
+	PORT_BIT( 0x0040, IP_ACTIVE_LOW, IPT_BUTTON3 ) PORT_PLAYER(4)
+	PORT_BIT( 0x0080, IP_ACTIVE_LOW, IPT_UNUSED )
+	PORT_BIT( 0x0100, IP_ACTIVE_LOW, IPT_BUTTON4 ) PORT_PLAYER(4)
+	PORT_BIT( 0x0200, IP_ACTIVE_LOW, IPT_BUTTON5 ) PORT_PLAYER(4)
+	PORT_BIT( 0x0400, IP_ACTIVE_LOW, IPT_BUTTON6 ) PORT_PLAYER(4)
+	PORT_BIT( 0xf800, IP_ACTIVE_LOW, IPT_UNUSED )
+INPUT_PORTS_END
+
+// ---------------------------------------------------------------------------------------------
+// 1v1 / 2v2 SELECTOR
+//
+// PORT_CONFNAME, not PORT_DIPNAME. This is read by the DRIVER (vs4p_partner_on_point), never by
+// the game program: the VS titles have no concept of a third or fourth player, so an emulated PCB
+// dipswitch would be inert -- there is no ROM code to branch on it. The entire 2v2 mod lives in
+// the driver, so the switch belongs there too.
+//
+// Two variants, differing ONLY in default:
+//   cps2_4p6b_mode     -> 1v1. For the STOCK Capcom sets, where an untouched launch must be
+//                         indistinguishable from unmodified MAME. 2v2 is opt-in.
+//   cps2_4p6b_mode2v2  -> 2v2. For the modded *2v2 sets, whose whole purpose is 4-player; they
+//                         come up ready to play, with 1v1 as the fallback.
+// ---------------------------------------------------------------------------------------------
+static INPUT_PORTS_START( cps2_4p6b_mode )
+	PORT_INCLUDE(cps2_4p6b)
+
+	PORT_START("PLAYMODE")
+	PORT_CONFNAME( 0x01, 0x00, "Play Mode" )
+	PORT_CONFSETTING(    0x00, "1v1 (stock, 2 players)" )
+	PORT_CONFSETTING(    0x01, "2v2 (4 players)" )
+	PORT_BIT( 0xfffe, IP_ACTIVE_LOW, IPT_UNUSED )
+INPUT_PORTS_END
+
+static INPUT_PORTS_START( cps2_4p6b_mode2v2 )
+	PORT_INCLUDE(cps2_4p6b)
+
+	PORT_START("PLAYMODE")
+	PORT_CONFNAME( 0x01, 0x01, "Play Mode" )
+	PORT_CONFSETTING(    0x00, "1v1 (stock, 2 players)" )
+	PORT_CONFSETTING(    0x01, "2v2 (4 players)" )
+	PORT_BIT( 0xfffe, IP_ACTIVE_LOW, IPT_UNUSED )
+INPUT_PORTS_END
+
+// ---------------------------------------------------------------------------------------------
+// mvscduo ports -- DELIBERATELY A STANDALONE COPY, NOT PORT_INCLUDE(cps2_4p6b).
+//
+// INSULATION. duo is 4-LIVE: all four fighters are on the field at once, its P3/P4 routing is
+// baked into the program ROM (STUB v3 @0x13698 reads 804050/804052 directly), and init_mvscduo
+// leaves m_vs4p_gate at {0,0} so the driver mux never runs. It therefore needs the P3/P4 ports
+// but must NEVER inherit anything the 2v2 work adds -- a selector here would be a menu entry that
+// does nothing, since duo has no 1v1 mode to switch to.
+//
+// An earlier attempt added the selector to the shared cps2_4p6b and it leaked straight into duo.
+// Copying the port definitions makes that class of accident structurally impossible. The cost is
+// ~24 duplicated lines; cps2_2p6b is still shared because that is genuine CPS2 base hardware, not
+// part of this mod's surface.
+//
+// ⚠ STILL SHARED WITH THE 2v2 SETS: cps2_4p_map (creates 804050/804052). duo's program ROM
+// HARDCODES those two addresses -- moving them silently breaks the baked stub. Change with care.
+// ---------------------------------------------------------------------------------------------
+static INPUT_PORTS_START( cps2_4p6b_duo )
+	PORT_INCLUDE(cps2_2p6b)
+
+	PORT_START("IN_P3")
+	PORT_BIT( 0x0001, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT ) PORT_8WAY PORT_PLAYER(3)
+	PORT_BIT( 0x0002, IP_ACTIVE_LOW, IPT_JOYSTICK_LEFT ) PORT_8WAY PORT_PLAYER(3)
+	PORT_BIT( 0x0004, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_8WAY PORT_PLAYER(3)
+	PORT_BIT( 0x0008, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_8WAY PORT_PLAYER(3)
+	PORT_BIT( 0x0010, IP_ACTIVE_LOW, IPT_BUTTON1 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0020, IP_ACTIVE_LOW, IPT_BUTTON2 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0040, IP_ACTIVE_LOW, IPT_BUTTON3 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0080, IP_ACTIVE_LOW, IPT_UNUSED )
+	PORT_BIT( 0x0100, IP_ACTIVE_LOW, IPT_BUTTON4 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0200, IP_ACTIVE_LOW, IPT_BUTTON5 ) PORT_PLAYER(3)
+	PORT_BIT( 0x0400, IP_ACTIVE_LOW, IPT_BUTTON6 ) PORT_PLAYER(3)
+	PORT_BIT( 0xf800, IP_ACTIVE_LOW, IPT_UNUSED )
+
+	PORT_START("IN_P4")
+	PORT_BIT( 0x0001, IP_ACTIVE_LOW, IPT_JOYSTICK_RIGHT ) PORT_8WAY PORT_PLAYER(4)
+	PORT_BIT( 0x0002, IP_ACTIVE_LOW, IPT_JOYSTICK_LEFT ) PORT_8WAY PORT_PLAYER(4)
+	PORT_BIT( 0x0004, IP_ACTIVE_LOW, IPT_JOYSTICK_DOWN ) PORT_8WAY PORT_PLAYER(4)
+	PORT_BIT( 0x0008, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_8WAY PORT_PLAYER(4)
+	PORT_BIT( 0x0010, IP_ACTIVE_LOW, IPT_BUTTON1 ) PORT_PLAYER(4)
+	PORT_BIT( 0x0020, IP_ACTIVE_LOW, IPT_BUTTON2 ) PORT_PLAYER(4)
+	PORT_BIT( 0x0040, IP_ACTIVE_LOW, IPT_BUTTON3 ) PORT_PLAYER(4)
+	PORT_BIT( 0x0080, IP_ACTIVE_LOW, IPT_UNUSED )
+	PORT_BIT( 0x0100, IP_ACTIVE_LOW, IPT_BUTTON4 ) PORT_PLAYER(4)
+	PORT_BIT( 0x0200, IP_ACTIVE_LOW, IPT_BUTTON5 ) PORT_PLAYER(4)
+	PORT_BIT( 0x0400, IP_ACTIVE_LOW, IPT_BUTTON6 ) PORT_PLAYER(4)
+	PORT_BIT( 0xf800, IP_ACTIVE_LOW, IPT_UNUSED )
+INPUT_PORTS_END
+
 // 2 players, 6 buttons, and 1 ticket dispenser (2 rows of 3 buttons)
 static INPUT_PORTS_START( cps2_2p6bt )
 	PORT_INCLUDE(cps2_2p6b)
@@ -1777,6 +2136,37 @@ void cps2_state::cps2(machine_config &config)
 	QSOUND(config, m_qsound);
 	m_qsound->add_route(0, "speaker", 1.0, 0);
 	m_qsound->add_route(1, "speaker", 1.0, 1);
+}
+
+// NOTE: the old shared `cps2_4p` config (4-player ports + a 512px widescreen raster) has been
+// REMOVED. It was the widescreen feasibility experiment and its only remaining user was the STOCK
+// mvsc parent, which had no business being widescreen or 4-player. The two survivors below are
+// explicit about their screen: cps2_4p_43 (2v2 variants, stock 4:3) and cps2_4p_duo (mvscduo,
+// widescreen). Per the project's hard build rule: WIDESCREEN = mvscduo ONLY.
+
+void cps2_state::cps2_4p_43(machine_config &config)
+{
+	cps2(config);
+	// 4-player input (P3/P4 registers at 0x804050/0x804052) with the STOCK 4:3 screen. Used by
+	// every 2v2-capable set (stock xmvsf/mshvsf/mvsc + mshvsf2v2/mvsc2v2) -- NO widescreen, which
+	// is mvscduo-only and lives in cps2_4p_duo.
+	m_maincpu->set_addrmap(AS_PROGRAM, &cps2_state::cps2_4p_map);
+}
+
+void cps2_state::cps2_4p_duo(machine_config &config)
+{
+	cps2(config);
+	// mvscduo standalone: 4-player 4-LIVE Duo mode on the widescreen raster. Same P3/P4 input map
+	// as the 2v2 sets, but presented full-512px / 16:9 so all four fighters can traverse the wider
+	// field (walls + screen-anchored specials are widened in the program ROM). This is a dedicated
+	// config (not the shared cps2_4p) so the parent mvsc can later be restored to stock without
+	// disturbing mvscduo.
+	m_maincpu->set_addrmap(AS_PROGRAM, &cps2_state::cps2_4p_map);
+
+	// Full 512px raster (cols 0..512 vs stock 64..448) -- widest the CPS-A/B composes.
+	m_screen->set_raw(CPS_PIXEL_CLOCK, CPS_HTOTAL, 0, CPS_HTOTAL, CPS_VTOTAL, CPS_VBEND, CPS_VBSTART);
+	// Present at 16:9 so pixels keep their stock shape: 512/384 x (4:3) = 16:9.
+	m_screen->set_physical_aspect(16, 9);
 }
 
 void cps2_state::cps2comm(machine_config &config)
@@ -5400,6 +5790,46 @@ ROM_START( mshvsfj1 )
 	ROM_LOAD( "mshvsfj.key",  0x000000, 0x000014, CRC(565eeebb) SHA1(762844b59b2fcf529a26ad3dde8282415db926b3) )
 ROM_END
 
+// 4-player 2v2 variant, built on the Japan 970625 (mshvsfj2) program for the full roster incl.
+// Norimaro (native on JP; euro removed his select-cell). P3/P4 routing uses the fixed +0x00
+// on-field gate (FF4000/FF4400) which is base-independent -- the old +0x79 turbo was NOT a
+// euro/JP difference, it was the wrong (pose-coupled) offset on both.
+ROM_START( mshvsf2v2 )
+	ROM_REGION( CODE_SIZE, "maincpu", 0 ) // 68000 code
+	// mvsj2v2.03g = JP mvsj.03g + select-hook (JSR to secret handlers in .10b), CPS2-encrypted.
+	ROM_LOAD16_WORD_SWAP( "mvsj2v2.03g", 0x000000, 0x80000, CRC(634ff285) SHA1(9b146217b980a942b306f60b9ed8268db38a18cb) )
+	ROM_LOAD16_WORD_SWAP( "mvsj.04g", 0x080000, 0x80000, CRC(c921825f) SHA1(471e44268cebba631b81f131bf31e27b8a28c548) )
+	ROM_LOAD16_WORD_SWAP( "mvs.05a",  0x100000, 0x80000, CRC(1a5de0cb) SHA1(738a27f83704c208d36d73bf766d861ef2d51a89) )
+	ROM_LOAD16_WORD_SWAP( "mvs.06a",  0x180000, 0x80000, CRC(959f3030) SHA1(fbbaa915324815246738f3426232e623f039ce26) )
+	ROM_LOAD16_WORD_SWAP( "mvs.07b",  0x200000, 0x80000, CRC(7f915bdb) SHA1(683da09c5ba55e31b59aa95a8e13c45dc574ab3c) )
+	ROM_LOAD16_WORD_SWAP( "mvs.08a",  0x280000, 0x80000, CRC(c2813884) SHA1(49e5d4bc48f90c8146cb6aafb9240aff0119f1a7) )
+	ROM_LOAD16_WORD_SWAP( "mvs.09b",  0x300000, 0x80000, CRC(3ba08818) SHA1(9ab132a3cac55fcccebe6c99b6fb0ba1305f8f6e) )
+	// mvs2v2.10b = mvs.10b + the four secret-select handlers in its free space (plaintext, >enc range).
+	ROM_LOAD16_WORD_SWAP( "mvs2v2.10b", 0x380000, 0x80000, CRC(807c5efc) SHA1(dbe09ed38b6dbf823786c597be774e809fd9095f) )
+
+	ROM_REGION( 0x2000000, "gfx", 0 )
+	ROM_LOAD64_WORD( "mvs.13m",   0x0000000, 0x400000, CRC(29b05fd9) SHA1(e8fdb1ee5515a560eb4256ae4fd99bb1192e1a87) )
+	ROM_LOAD64_WORD( "mvs.15m",   0x0000002, 0x400000, CRC(faddccf1) SHA1(4ed03ea91883a0413325f57edcc1614120b5922c) )
+	ROM_LOAD64_WORD( "mvs.17m",   0x0000004, 0x400000, CRC(97aaf4c7) SHA1(6a054921cc14fe080cb3f62c391f8ae3cc7e8ba9) )
+	ROM_LOAD64_WORD( "mvs.19m",   0x0000006, 0x400000, CRC(cb70e915) SHA1(da4d2480d348ac6dfd01256a88f4f3db8357ae46) )
+	ROM_LOAD64_WORD( "mvs.14m",   0x1000000, 0x400000, CRC(b3b1972d) SHA1(0f2c3fb7de014181ee481ec35d0578b2c116c2dc) )
+	ROM_LOAD64_WORD( "mvs.16m",   0x1000002, 0x400000, CRC(08aadb5d) SHA1(3a2c222eca3e7df80ce69951b3db6442312751a4) )
+	ROM_LOAD64_WORD( "mvs.18m",   0x1000004, 0x400000, CRC(c1228b35) SHA1(7afdfb552888c79d0fbb30242b3d917b87fad57a) )
+	ROM_LOAD64_WORD( "mvs.20m",   0x1000006, 0x400000, CRC(366cc6c2) SHA1(6f2a789087c8e404c5227b927fa8328c03593243) )
+
+	ROM_REGION( QSOUND_SIZE, "audiocpu", 0 ) // 64k for the audio CPU (+banks)
+	ROM_LOAD( "mvs.01",   0x00000, 0x08000, CRC(68252324) SHA1(138ef320ef27956b2ab5591d49a1315b7b0a194c) )
+	ROM_CONTINUE(         0x10000, 0x18000 )
+	ROM_LOAD( "mvs.02",   0x28000, 0x20000, CRC(b34e773d) SHA1(3bcf44bf06c35814cff29d244142db7abe05bd39) )
+
+	ROM_REGION( 0x800000, "qsound", 0 ) // QSound samples
+	ROM_LOAD16_WORD_SWAP( "mvs.11m",   0x000000, 0x400000, CRC(86219770) SHA1(4e5b68d382a5aa37f8b0b6434c53a2b95f5f9a4d) )
+	ROM_LOAD16_WORD_SWAP( "mvs.12m",   0x400000, 0x400000, CRC(f2fd7f68) SHA1(28a30d55d3eaf963006c7cbe7c288099cd3ba536) )
+
+	ROM_REGION( 0x20, "key", 0 )
+	ROM_LOAD( "mshvsfj.key",  0x000000, 0x000014, CRC(565eeebb) SHA1(762844b59b2fcf529a26ad3dde8282415db926b3) )
+ROM_END
+
 ROM_START( mshvsfj2 )
 	ROM_REGION( CODE_SIZE, "maincpu", 0 ) // 68000 code
 	ROM_LOAD16_WORD_SWAP( "mvsj.03g", 0x000000, 0x80000, CRC(fdfa7e26) SHA1(e9fb93249e48e1bb7c769c3ce674dd4be404574f) )
@@ -5715,6 +6145,81 @@ ROM_START( mvscu )
 
 	ROM_REGION( 0x20, "key", 0 )
 	ROM_LOAD( "mvscu.key",    0x000000, 0x000014, CRC(a83db333) SHA1(7f7288ceadf233d913728f7c4a8841adcb5994e8) )
+ROM_END
+
+// 4-player 2v2 variant on the USA (mvscu) base. mvcu2v2.03d/.04d = mvcu.03d/.04d + the "all
+// characters" patch (sets the enable-all-chars flag 0x40 via a hooked routine), re-encrypted for
+// mvscu.key. See tools/mvsc2v2_allchars.py. 4:3 (no widescreen); routing via +0x00 gate.
+ROM_START( mvsc2v2 )
+	ROM_REGION( CODE_SIZE, "maincpu", 0 ) // 68000 code
+	ROM_LOAD16_WORD_SWAP( "mvcu2v2.03d", 0x000000, 0x80000, CRC(b1822dda) SHA1(12b2f3b7b2a45d86b952fc891b3ed1c853fe3513) )
+	ROM_LOAD16_WORD_SWAP( "mvcu2v2.04d", 0x080000, 0x80000, CRC(dd2f1026) SHA1(6835390bc4b4c58d651f39c3ede543b31367d782) )
+	ROM_LOAD16_WORD_SWAP( "mvc.05a",  0x100000, 0x80000, CRC(2d8c8e86) SHA1(b07d640a734c5d336054ed05195786224c9a6cd4) )
+	ROM_LOAD16_WORD_SWAP( "mvc.06a",  0x180000, 0x80000, CRC(8528e1f5) SHA1(cd065c05268ab581b05676da544baf6af642acac) )
+	ROM_LOAD16_WORD_SWAP( "mvc.07",   0x200000, 0x80000, CRC(c3baa32b) SHA1(d35589847e0753e869ffcd7c3abed925bfdb0fa2) )
+	ROM_LOAD16_WORD_SWAP( "mvc.08",   0x280000, 0x80000, CRC(bc002fcd) SHA1(0b6735a071a9274f7ab25c743271fc30411fe819) )
+	ROM_LOAD16_WORD_SWAP( "mvc.09",   0x300000, 0x80000, CRC(c67b26df) SHA1(6e9969246c57269d7ba0992a5cc319c8910bf8a9) )
+	ROM_LOAD16_WORD_SWAP( "mvc.10",   0x380000, 0x80000, CRC(0fdd1e26) SHA1(5fa684d823b4f4eec61ed9e9b8938af5272ae1ed) )
+
+	ROM_REGION( 0x2000000, "gfx", 0 )
+	ROM_LOAD64_WORD( "mvc.13m",   0x0000000, 0x400000, CRC(fa5f74bc) SHA1(79a619248938a85ce4f7794a704647b9cf564fbc) )
+	ROM_LOAD64_WORD( "mvc.15m",   0x0000002, 0x400000, CRC(71938a8f) SHA1(6982f7203458c1c46a1c1c13c0d0f2a5e109d271) )
+	ROM_LOAD64_WORD( "mvc.17m",   0x0000004, 0x400000, CRC(92741d07) SHA1(ddfd70eab7c983ab452194b1860059f8ad694459) )
+	ROM_LOAD64_WORD( "mvc.19m",   0x0000006, 0x400000, CRC(bcb72fc6) SHA1(46ab98dcdf6f5d611646a22a7355939ef5b2bbe5) )
+	ROM_LOAD64_WORD( "mvc.14m",   0x1000000, 0x400000, CRC(7f1df4e4) SHA1(ede92b31c1fe87f91b4fe74ac211f2fb5f863bc2) )
+	ROM_LOAD64_WORD( "mvc.16m",   0x1000002, 0x400000, CRC(90bd3203) SHA1(ed83208c486ea0f407b7e5d16a8cf242a6f73774) )
+	ROM_LOAD64_WORD( "mvc.18m",   0x1000004, 0x400000, CRC(67aaf727) SHA1(e0e69104e31d2c41e18c0d24e9ab962406a7ca9a) )
+	ROM_LOAD64_WORD( "mvc.20m",   0x1000006, 0x400000, CRC(8b0bade8) SHA1(c5732361bb4bf284c4d12a82ac2c5750b1f9d441) )
+
+	ROM_REGION( QSOUND_SIZE, "audiocpu", 0 ) // 64k for the audio CPU (+banks)
+	ROM_LOAD( "mvc.01",   0x00000, 0x08000, CRC(41629e95) SHA1(36925c05b5fdcbe43283a882d021e5360c947061) )
+	ROM_CONTINUE(         0x10000, 0x18000 )
+	ROM_LOAD( "mvc.02",   0x28000, 0x20000, CRC(963abf6b) SHA1(6b784870e338701cefabbbe4669984b5c4e8a9a5) )
+
+	ROM_REGION( 0x800000, "qsound", 0 ) // QSound samples
+	ROM_LOAD16_WORD_SWAP( "mvc.11m",   0x000000, 0x400000, CRC(850fe663) SHA1(81e519d05a08855f242ea2e17ee0859b449db895) )
+	ROM_LOAD16_WORD_SWAP( "mvc.12m",   0x400000, 0x400000, CRC(7ccb1896) SHA1(74caadf3282fcc6acffb1bbe3734106f81124121) )
+
+	ROM_REGION( 0x20, "key", 0 )
+	ROM_LOAD( "mvscu.key",    0x000000, 0x000014, CRC(a83db333) SHA1(7f7288ceadf233d913728f7c4a8841adcb5994e8) )
+ROM_END
+
+// mvscduo: mvsc EURO base with the widescreen 4-LIVE Duo patches baked in (tools/mvscduo_patch.py):
+// STUB v3 input routing + hijack (.03a/.10), wide walls + KO cut + beam reach (.03a), Blodia reach
+// (.04a). Encrypted-range words re-encrypted for mvsc.key; the stub body @0x3FF000 is plaintext in
+// mvcduo.10. Shared euro data ROMs (mvc.05a-.09) + gfx/audio/qsound unchanged.
+ROM_START( mvscduo )
+	ROM_REGION( CODE_SIZE, "maincpu", 0 ) // 68000 code
+	ROM_LOAD16_WORD_SWAP( "mvcduo.03a", 0x000000, 0x80000, CRC(7ffe4657) SHA1(802911b5cca8711de245fca296b40fd2e75f60c5) )
+	ROM_LOAD16_WORD_SWAP( "mvcduo.04a", 0x080000, 0x80000, CRC(027d7306) SHA1(a7df8cae4ed49bf7aedab5c131bc271246dfa2c7) )
+	ROM_LOAD16_WORD_SWAP( "mvc.05a",  0x100000, 0x80000, CRC(2d8c8e86) SHA1(b07d640a734c5d336054ed05195786224c9a6cd4) )
+	ROM_LOAD16_WORD_SWAP( "mvc.06a",  0x180000, 0x80000, CRC(8528e1f5) SHA1(cd065c05268ab581b05676da544baf6af642acac) )
+	ROM_LOAD16_WORD_SWAP( "mvc.07",   0x200000, 0x80000, CRC(c3baa32b) SHA1(d35589847e0753e869ffcd7c3abed925bfdb0fa2) )
+	ROM_LOAD16_WORD_SWAP( "mvc.08",   0x280000, 0x80000, CRC(bc002fcd) SHA1(0b6735a071a9274f7ab25c743271fc30411fe819) )
+	ROM_LOAD16_WORD_SWAP( "mvc.09",   0x300000, 0x80000, CRC(c67b26df) SHA1(6e9969246c57269d7ba0992a5cc319c8910bf8a9) )
+	ROM_LOAD16_WORD_SWAP( "mvcduo.10", 0x380000, 0x80000, CRC(ae9075e8) SHA1(1aecd7f80c1562fa4200cc4068cb5cbaa3e08808) )
+
+	ROM_REGION( 0x2000000, "gfx", 0 )
+	ROM_LOAD64_WORD( "mvc.13m",   0x0000000, 0x400000, CRC(fa5f74bc) SHA1(79a619248938a85ce4f7794a704647b9cf564fbc) )
+	ROM_LOAD64_WORD( "mvc.15m",   0x0000002, 0x400000, CRC(71938a8f) SHA1(6982f7203458c1c46a1c1c13c0d0f2a5e109d271) )
+	ROM_LOAD64_WORD( "mvc.17m",   0x0000004, 0x400000, CRC(92741d07) SHA1(ddfd70eab7c983ab452194b1860059f8ad694459) )
+	ROM_LOAD64_WORD( "mvc.19m",   0x0000006, 0x400000, CRC(bcb72fc6) SHA1(46ab98dcdf6f5d611646a22a7355939ef5b2bbe5) )
+	ROM_LOAD64_WORD( "mvc.14m",   0x1000000, 0x400000, CRC(7f1df4e4) SHA1(ede92b31c1fe87f91b4fe74ac211f2fb5f863bc2) )
+	ROM_LOAD64_WORD( "mvc.16m",   0x1000002, 0x400000, CRC(90bd3203) SHA1(ed83208c486ea0f407b7e5d16a8cf242a6f73774) )
+	ROM_LOAD64_WORD( "mvc.18m",   0x1000004, 0x400000, CRC(67aaf727) SHA1(e0e69104e31d2c41e18c0d24e9ab962406a7ca9a) )
+	ROM_LOAD64_WORD( "mvc.20m",   0x1000006, 0x400000, CRC(8b0bade8) SHA1(c5732361bb4bf284c4d12a82ac2c5750b1f9d441) )
+
+	ROM_REGION( QSOUND_SIZE, "audiocpu", 0 ) // 64k for the audio CPU (+banks)
+	ROM_LOAD( "mvc.01",   0x00000, 0x08000, CRC(41629e95) SHA1(36925c05b5fdcbe43283a882d021e5360c947061) )
+	ROM_CONTINUE(         0x10000, 0x18000 )
+	ROM_LOAD( "mvc.02",   0x28000, 0x20000, CRC(963abf6b) SHA1(6b784870e338701cefabbbe4669984b5c4e8a9a5) )
+
+	ROM_REGION( 0x800000, "qsound", 0 ) // QSound samples
+	ROM_LOAD16_WORD_SWAP( "mvc.11m",   0x000000, 0x400000, CRC(850fe663) SHA1(81e519d05a08855f242ea2e17ee0859b449db895) )
+	ROM_LOAD16_WORD_SWAP( "mvc.12m",   0x400000, 0x400000, CRC(7ccb1896) SHA1(74caadf3282fcc6acffb1bbe3734106f81124121) )
+
+	ROM_REGION( 0x20, "key", 0 )
+	ROM_LOAD( "mvsc.key",     0x000000, 0x000014, CRC(7e101e09) SHA1(9d725a7c6bbc20e46f749eaec4bab15b0195077a) )
 ROM_END
 
 ROM_START( mvscur1 )
@@ -10373,6 +10878,43 @@ ROM_START( xmvsf )
 	ROM_LOAD( "xmvsf.key",    0x000000, 0x000014, CRC(d5c07311) SHA1(1b401ffc241436c4869486c174774b67e3bf3df8) )
 ROM_END
 
+// xmvsf2v2: "X-Men vs Street Fighter 2v2" (TORNOTLUKIN, 2026). The X-Men 2v2 mod is
+// DRIVER-ONLY (init_xmvsf_4p) on bit-for-bit stock xmvsf ROMs, so this set's files are the
+// unmodified xmvse dumps. Standalone (parent 0) for the curated Modalicious build;
+// xmvsf2v2.zip = a copy of the stock xmvsf romset.
+ROM_START( xmvsf2v2 )
+	ROM_REGION( CODE_SIZE, "maincpu", 0 ) // 68000 code
+	ROM_LOAD16_WORD_SWAP( "xvse.03f", 0x000000, 0x80000, CRC(db06413f) SHA1(c6d8aa1e43fc541e5b4e938258f27ab9ee30ca33) )
+	ROM_LOAD16_WORD_SWAP( "xvse.04f", 0x080000, 0x80000, CRC(ef015aef) SHA1(d3504cb8c38f720b1f4528157266db60c8c6c075) )
+	ROM_LOAD16_WORD_SWAP( "xvs.05a",  0x100000, 0x80000, CRC(7db6025d) SHA1(2d74f48f83f45359bfaca28ab686625766af12ee) )
+	ROM_LOAD16_WORD_SWAP( "xvs.06a",  0x180000, 0x80000, CRC(e8e2c75c) SHA1(929408cb5d98e95cec75ea58e4701b0cbdbcd016) )
+	ROM_LOAD16_WORD_SWAP( "xvs.07",   0x200000, 0x80000, CRC(08f0abed) SHA1(ef16c376232dba63b0b9bc3aa0640f9001ccb68a) )
+	ROM_LOAD16_WORD_SWAP( "xvs.08",   0x280000, 0x80000, CRC(81929675) SHA1(19cf7afbc1daaefec40195e40ba74970f3906a1c) )
+	ROM_LOAD16_WORD_SWAP( "xvs.09",   0x300000, 0x80000, CRC(9641f36b) SHA1(dcba3482d1ba37ccfb30d402793ee063c6621aed) )
+
+	ROM_REGION( 0x2000000, "gfx", 0 )
+	ROM_LOAD64_WORD( "xvs.13m",   0x0000000, 0x400000, CRC(f6684efd) SHA1(c0a2f3a9e82ab8b084a500aec71ac633e947328c) )
+	ROM_LOAD64_WORD( "xvs.15m",   0x0000002, 0x400000, CRC(29109221) SHA1(898b8f678fd03c462ce0d8eb7fb3441ef601085b) )
+	ROM_LOAD64_WORD( "xvs.17m",   0x0000004, 0x400000, CRC(92db3474) SHA1(7b6f4c8ebfdac167b25f35029068b6253c141fe6) )
+	ROM_LOAD64_WORD( "xvs.19m",   0x0000006, 0x400000, CRC(3733473c) SHA1(6579da7145c95b3ad00844a5fc8c2e22c23365e2) )
+	ROM_LOAD64_WORD( "xvs.14m",   0x1000000, 0x400000, CRC(bcac2e41) SHA1(838ff24f7e8543a787a55a5d592c9517ce3b8b93) )
+	ROM_LOAD64_WORD( "xvs.16m",   0x1000002, 0x400000, CRC(ea04a272) SHA1(cd7c79037b5b4a39bef5156433e984dc4dc2c081) )
+	ROM_LOAD64_WORD( "xvs.18m",   0x1000004, 0x400000, CRC(b0def86a) SHA1(da3a6705ea7050fc5c2c10d33400ed67be9f455d) )
+	ROM_LOAD64_WORD( "xvs.20m",   0x1000006, 0x400000, CRC(4b40ff9f) SHA1(9a981d442132efff09a27408d74646ba357c7357) )
+
+	ROM_REGION( QSOUND_SIZE, "audiocpu", 0 ) // 64k for the audio CPU (+banks)
+	ROM_LOAD( "xvs.01",   0x00000, 0x08000, CRC(3999e93a) SHA1(fefcff8a9a5c83df7655a16187cf9ba3e7efbb25) )
+	ROM_CONTINUE(         0x10000, 0x18000 )
+	ROM_LOAD( "xvs.02",   0x28000, 0x20000, CRC(101bdee9) SHA1(75920e88bf46fcd33a7957777a1d799818ffb0d6) )
+
+	ROM_REGION( 0x400000, "qsound", 0 ) // QSound samples
+	ROM_LOAD16_WORD_SWAP( "xvs.11m",   0x000000, 0x200000, CRC(9cadcdbc) SHA1(64d3bd53b04daec84c9af4aa3ff010867b3d306d) )
+	ROM_LOAD16_WORD_SWAP( "xvs.12m",   0x200000, 0x200000, CRC(7b11e460) SHA1(a581c84acaaf0ce056841c15a6f36889e88be68d) )
+
+	ROM_REGION( 0x20, "key", 0 )
+	ROM_LOAD( "xmvsf.key",    0x000000, 0x000014, CRC(d5c07311) SHA1(1b401ffc241436c4869486c174774b67e3bf3df8) )
+ROM_END
+
 ROM_START( xmvsfr1 )
 	ROM_REGION( CODE_SIZE, "maincpu", 0 ) // 68000 code
 	ROM_LOAD16_WORD_SWAP( "xvse.03d", 0x000000, 0x80000, CRC(5ae5bd3b) SHA1(f687f018008cef24f86f53373c3f5547741a4c5b) )
@@ -10947,6 +11489,49 @@ void cps2_state::init_cps2()
 	init_cps2crypt();
 	init_cps2nc();
 }
+
+// 4-player 2v2 tag mod. Each set supplies the work-RAM address of its two teams' on-point index
+// (field +0x220 of each team's ACTIVE fighter struct -- see the cps2_4p_in0_r block comment).
+// The addresses are the only per-game part of the mod; everything else is shared. To map a new
+// set, disassemble its tag routine to find the active-slot bases, then add an init here.
+void cps2_state::init_vs4p(uint32_t gate1, uint32_t gate2)
+{
+	m_vs4p_gate[0] = gate1;
+	m_vs4p_gate[1] = gate2;
+	init_cps2();
+}
+
+// Verified: tag routine @0x010250 exchanges FF4000<->FF4800 (team 1) and FF4400<->FF4C00 (team 2).
+void cps2_state::init_xmvsf_4p()  { init_vs4p(0xff4220, 0xff4620); }
+
+// mshvsf uses PERMANENT per-character slots (array at FF3800 stride 0x400; char-id at slot+0x53),
+// NOT xmvsf's data-swap. Team1 = starter FF3800 (P1) + partner FF4000 (P3); team2 = FF3C00 (P2) +
+// FF4400 (P4). GATE = partner slot +0x00, the fighter's ON-FIELD flag: 0 while benched/off-field,
+// 1 while on point. Movement-proven stable (probe100: 100% both states through neutral AND motion).
+// NOTE the earlier +0x79 gate (FF4079/FF4479) was WRONG: it is a pose-coupled state byte that
+// toggles 0<->nonzero EVERY frame when a pad drives an animation (e.g. holding down), so the mux
+// flipped P1<->P3 per frame = "turbo"/stutter input. The old probe22 RAM-diff only sampled two
+// FROZEN configs and never caught the per-frame oscillation. +0x00 is decoupled from animation.
+void cps2_state::init_mshvsf_4p() { init_vs4p(0xff4000, 0xff4400); }
+
+// mvsc structure (verified live, probe22): mvsc indexes its fighter structs exactly like mshvsf --
+// both read a slot index from +0x94 and compute base + index*0x400 (mvsc base FF3000, mshvsf
+// FF3800). Confirming that shared code shape in mvsc's OWN ROM first is what made the carry-over
+// valid; porting xmvsf's layout to mshvsf on the same hunch failed completely.
+//
+// GATE = partner slot +0x00, the ON-FIELD flag. mvsc partner slots are FF3800/FF3C00.
+// An earlier init_mvsc_4p used slot +0x79 (FF3879/FF3C79) and has been REMOVED: that byte is
+// pose-coupled and toggles 0<->nonzero every frame while a pad drives an animation, so the mux
+// flipped P1<->P3 per frame = "turbo"/stutter input. Identical failure to mshvsf's -- see the
+// init_mshvsf_4p note. The old probe22 RAM-diff only sampled two FROZEN configs and never caught
+// the per-frame oscillation.
+void cps2_state::init_mvsc2v2_4p() { init_vs4p(0xff3800, 0xff3c00); }
+
+// mvscduo (widescreen 4-LIVE Duo variant): all P3/P4 routing is baked into the program ROM by the
+// STUB v3 hijack at 0x13698 (routes fighter slot FF3800->port 804050, FF3C00->804052), so the
+// driver input mux must stay OUT of the path. Leave m_vs4p_gate at {0,0} (do NOT call init_vs4p):
+// with the gate unset, cps2_4p_in0_r/in1_r/in2_r pass P1/P2 through unchanged. Just do the crypto.
+void cps2_state::init_mvscduo() { init_cps2(); }
 
 void cps2_state::init_cps2nc()
 {
@@ -12731,7 +13316,12 @@ GAME( 1996, megaman2a,  megaman2, cps2,     cps2_2p3b, cps2_state, init_cps2,   
 GAME( 1996, rockman2j,  megaman2, cps2,     cps2_2p3b, cps2_state, init_cps2,     ROT0,   "Capcom", "Rockman 2: The Power Fighters (Japan 960708)",                                  MACHINE_SUPPORTS_SAVE )
 GAME( 1996, megaman2h,  megaman2, cps2,     cps2_2p3b, cps2_state, init_cps2,     ROT0,   "Capcom", "Mega Man 2: The Power Fighters (Hispanic 960712)",                              MACHINE_SUPPORTS_SAVE )
 GAME( 1996, qndream,    0,        cps2,     qndream,   cps2_state, init_cps2,     ROT0,   "Capcom", "Quiz Nanairo Dreams: Nijiirochou no Kiseki (Japan 960826)",                     MACHINE_SUPPORTS_SAVE )
-GAME( 1996, xmvsf,      0,        cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (Europe 961004)",                                      MACHINE_SUPPORTS_SAVE )
+// 4-PLAYER 2v2 offered on the STOCK set via Machine Configuration -> "Play Mode" (default 1v1,
+// which is bit-for-bit stock). ROMs are unmodified Capcom dumps. There is no xmvsf2v2 companion
+// set: xmvsf needed no ROM patch at all (Akuma is reachable by the normal select code), so once
+// the stock entry carries the selector a separate set would be an exact duplicate.
+GAME( 1996, xmvsf,      0,        cps2_4p_43, cps2_4p6b_mode, cps2_state, init_xmvsf_4p, ROT0, "Capcom", "X-Men Vs. Street Fighter (Europe 961004)",                                      MACHINE_SUPPORTS_SAVE )
+GAME( 2026, xmvsf2v2,   0,        cps2_4p_43, cps2_4p6b_mode2v2, cps2_state, init_xmvsf_4p, ROT0, "TORNOTLUKIN", "X-Men vs Street Fighter 2v2",                                             MACHINE_SUPPORTS_SAVE )
 GAME( 1996, xmvsfr1,    xmvsf,    cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (Europe 960910)",                                      MACHINE_SUPPORTS_SAVE )
 GAME( 1996, xmvsfu,     xmvsf,    cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (USA 961023)",                                         MACHINE_SUPPORTS_SAVE )
 GAME( 1996, xmvsfur1,   xmvsf,    cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "X-Men Vs. Street Fighter (USA 961004)",                                         MACHINE_SUPPORTS_SAVE )
@@ -12756,12 +13346,17 @@ GAME( 1997, vsavj,      vsav,     cps2,     cps2_2p6b, cps2_state, init_cps2,   
 GAME( 1997, vsava,      vsav,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Vampire Savior: The Lord of Vampire (Asia 970519)",                             MACHINE_SUPPORTS_SAVE )
 GAME( 1997, vsavh,      vsav,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Vampire Savior: The Lord of Vampire (Hispanic 970519)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1997, vsavb,      vsav,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Vampire Savior: The Lord of Vampire (Brazil 970519)",                           MACHINE_SUPPORTS_SAVE )
-GAME( 1997, mshvsf,     0,        cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Europe 970625)",                        MACHINE_SUPPORTS_SAVE )
+// 4-PLAYER 2v2 via Machine Configuration -> "Play Mode" (default 1v1). Stock ROMs, standard
+// roster. mshvsf2v2 below is the same mod on patched ROMs that also unlock the secret characters.
+GAME( 1997, mshvsf,     0,        cps2_4p_43, cps2_4p6b_mode, cps2_state, init_mshvsf_4p, ROT0, "Capcom", "Marvel Super Heroes Vs. Street Fighter (Europe 970625)",                        MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfu,    mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (USA 970827)",                           MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfu1,   mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (USA 970625)",                           MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfj,    mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Japan 970707)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfj1,   mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Japan 970702)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfj2,   mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Japan 970625)",                         MACHINE_SUPPORTS_SAVE )
+// Same 2v2 mod as the stock mshvsf entry, on patched ROMs that also unlock the secret characters
+// (hold your own START on a base character). Defaults to 2v2; 1v1 still available in the menu.
+GAME( 2026, mshvsf2v2,  0,        cps2_4p_43, cps2_4p6b_mode2v2, cps2_state, init_mshvsf_4p, ROT0, "TORNOTLUKIN", "Marvel Super Heroes vs Street Fighter 2v2",                          MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfh,    mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Hispanic 970625)",                      MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfa,    mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Asia 970625)",                          MACHINE_SUPPORTS_SAVE )
 GAME( 1997, mshvsfa1,   mshvsf,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Super Heroes Vs. Street Fighter (Asia 970620)",                          MACHINE_SUPPORTS_SAVE )
@@ -12780,9 +13375,18 @@ GAME( 1997, sgemfh,     sgemf,    cps2,     cps2_2p3b, cps2_state, init_cps2,   
 GAME( 1997, vhunt2,     0,        cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Vampire Hunter 2: Darkstalkers Revenge (Japan 970929)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1997, vhunt2r1,   vhunt2,   cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Vampire Hunter 2: Darkstalkers Revenge (Japan 970913)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1997, vsav2,      0,        cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Vampire Savior 2: The Lord of Vampire (Japan 970913)",                          MACHINE_SUPPORTS_SAVE )
-GAME( 1998, mvsc,       0,        cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Europe 980123)",                      MACHINE_SUPPORTS_SAVE )
+// 4-PLAYER 2v2 via Machine Configuration -> "Play Mode" (default 1v1). Stock ROMs, standard
+// roster. mvsc2v2 below is the same mod on patched ROMs with the full roster unlocked.
+GAME( 1998, mvsc,       0,        cps2_4p_43, cps2_4p6b_mode, cps2_state, init_mvsc2v2_4p, ROT0, "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Europe 980123)",                      MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscr1,     mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Europe 980112)",                      MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscu,      mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (USA 980123)",                         MACHINE_SUPPORTS_SAVE )
+// Same 2v2 mod as the stock mvsc entry, on patched USA ROMs with every hidden character unlocked.
+// Defaults to 2v2; 1v1 still available in the menu.
+GAME( 2026, mvsc2v2,    0,        cps2_4p_43, cps2_4p6b_mode2v2, cps2_state, init_mvsc2v2_4p, ROT0, "TORNOTLUKIN", "Marvel vs Capcom 2v2",                                             MACHINE_SUPPORTS_SAVE )
+// 4-LIVE Duo: NOT a 2v2 tag mod and NOT selectable -- all four fighters are on the field at once,
+// always. Uses the insulated cps2_4p6b_duo ports (no "Play Mode" entry, since there is no 1v1 to
+// switch to) and routes P3/P4 from its own program ROM rather than the driver mux.
+GAME( 2026, mvscduo,    0,        cps2_4p_duo, cps2_4p6b_duo, cps2_state, init_mvscduo, ROT0,  "TORNOTLUKIN", "Marvel vs Capcom Widescreen Duo-Mode",                                  MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscur1,    mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (USA 971222)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscj,      mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Japan 980123)",                       MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscjr1,    mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Japan 980112)",                       MACHINE_SUPPORTS_SAVE )
