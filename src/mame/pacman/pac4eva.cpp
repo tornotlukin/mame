@@ -122,6 +122,10 @@ void pac4eva_state::main_map(address_map &map)
 	// hardware decodes nothing past 0x5101, so this costs no stock behaviour. It exists to
 	// keep bulk game DATA (fruit tables, and whatever comes next) out of expansion ROM 2,
 	// which the maze editor's per-maze data fills as the maze library grows.
+	// Expansion ROM 4 - the per-player pac chains. Starts at 0x5180, NOT 0x5100: 0x5100 and
+	// 0x5101 are P3's and P4's stick ports mapped just above, and a ROM decoded over them
+	// would take the inputs away from two players.
+	map(0x5180, 0x57ff).rom();                     // expansion ROM 4 (per-player chains; plaintext)
 	map(0x5800, 0x5fff).rom();                     // expansion ROM 3 (2K; plaintext)
 	map(0x6000, 0x7fff).rom();                     // expansion ROM 2 (engine modules + maze tables; plaintext)
 	map(0x8000, 0xdfff).rom();
@@ -547,14 +551,15 @@ void pac4eva_state::pac4eva(machine_config &config)
 */
 ROM_START( pac4eva )
 	ROM_REGION( 0x10000, "maincpu", 0 )
-	ROM_LOAD( "jr.pac-man_8d_11-9-83.8d",    0x0000, 0x2000, CRC(7799a7e6) SHA1(daa18744dd12743a5adc8cc43f780ae54cd14b3c) )
-	ROM_LOAD( "jr.pac-man_8e_11-9-83.8e",    0x2000, 0x2000, CRC(a96ec188) SHA1(8c7e4f957a0391d42d88f06484e335563469f967) )
-	ROM_LOAD( "jr.pac-man_8h_11-9-83.8h",    0x8000, 0x2000, CRC(0dcb23b9) SHA1(f08953db4073f06b5b7c93c5c153ae91deaabc8c) )
-	ROM_LOAD( "jr.pac-man_8j_11-9-83.8j",    0xa000, 0x2000, CRC(7bf7ffff) SHA1(3765ce2545bb290948a1a8745e5e8a224b398e5c) )
-	ROM_LOAD( "jr.pac-man_8k_11-9-83.8k",    0xc000, 0x2000, CRC(dc93c0bf) SHA1(f414b4e59f0b93909f391b97eed6633520cd9571) )
-	ROM_LOAD( "pac4eva.5x",                  0x5800, 0x0800, CRC(8a72ab7e) SHA1(f830280cd1ea2447567d2d51263ca3f2b03c5c8d) ) // expansion ROM 3 (bulk game data; plaintext)
-	ROM_LOAD( "pac4eva.6x",                  0x6000, 0x2000, CRC(52ab2b63) SHA1(225e10a67778ba5936171c8521401a2466062441) ) // expansion ROM 2 (engine modules + maze tables; plaintext)
-	ROM_LOAD( "pac4eva.8x",                  0xe000, 0x2000, CRC(021ce211) SHA1(8b431b5c6f3f050d6d180f4ba4a60204ab204223) ) // expansion ROM (screens, ghost engine; plaintext)
+	ROM_LOAD( "jr.pac-man_8d_11-9-83.8d",    0x0000, 0x2000, CRC(e99e4500) SHA1(dce7731c63d6d55bcb59f6aa38f216a0e0fee42e) )
+	ROM_LOAD( "jr.pac-man_8e_11-9-83.8e",    0x2000, 0x2000, CRC(cecd969f) SHA1(d7bdc5730db9dc6689227e806b778c43c00cea48) )
+	ROM_LOAD( "jr.pac-man_8h_11-9-83.8h",    0x8000, 0x2000, CRC(005a0c5d) SHA1(c3c08d526560fc416482c97e0cff6ba8855c3b9c) )
+	ROM_LOAD( "jr.pac-man_8j_11-9-83.8j",    0xa000, 0x2000, CRC(8b55e9dc) SHA1(a206f7714b6778757885898119f711e97c7eb196) )
+	ROM_LOAD( "jr.pac-man_8k_11-9-83.8k",    0xc000, 0x2000, CRC(4939f690) SHA1(5fa3e8baa7db4d762606a513510442b765be3a90) )
+	ROM_LOAD( "pac4eva.5y",                  0x5180, 0x0680, CRC(05ce6ee7) SHA1(040d3e31a3ad840c199feedeb9c337665ee785f6) ) // expansion ROM 4 (per-player chains; plaintext)
+	ROM_LOAD( "pac4eva.5x",                  0x5800, 0x0800, CRC(49c1b9a3) SHA1(d67964d8d9e43e8bf7f06a278d0347a52896bdd0) ) // expansion ROM 3 (bulk game data; plaintext)
+	ROM_LOAD( "pac4eva.6x",                  0x6000, 0x2000, CRC(440dd1e7) SHA1(e73687380aaf0346536153da013f7d12b015f4a0) ) // expansion ROM 2 (engine modules + maze tables; plaintext)
+	ROM_LOAD( "pac4eva.8x",                  0xe000, 0x2000, CRC(ffb431c1) SHA1(2d8a5d1d3a53a42a41bf1f19467e31506909694c) ) // expansion ROM (screens, ghost engine; plaintext)
 
 	ROM_REGION( 0x6000, "gfx1", 0 )   // tiles 0x2000 + sprites 0x4000 (256 shapes)
 	ROM_LOAD( "jr.pac-man_2c_11-9-83.2c",    0x0000, 0x2000, CRC(a624f5cb) SHA1(90809d9d30df183461c0c40f2da941a21fec6d5c) ) /* tiles (512) */
