@@ -66,6 +66,7 @@ public:
 		: pacman_state(mconfig, type, tag)
 		, m_spritext(*this, "spritext")
 		, m_sprhi(*this, "sprhi")
+		, m_sprx9(*this, "sprx9")
 	{ }
 
 	void pac4eva(machine_config &config);
@@ -88,6 +89,7 @@ private:
 
 	optional_shared_ptr<uint8_t> m_spritext;   // 2 extended (software) sprites, slots 8-9
 	optional_shared_ptr<uint8_t> m_sprhi;      // per-sprite high bank (code bit7) for the 256-shape set
+	optional_shared_ptr<uint8_t> m_sprx9;      // per-sprite SIGNED high byte of the 9-bit position
 };
 
 
@@ -105,7 +107,9 @@ void pac4eva_state::main_map(address_map &map)
 	map(0x4800, 0x4aff).ram();
 	map(0x4b00, 0x4b07).ram().share("spritext");   // 2 extended (software) sprites (slots 8,9)
 	map(0x4b08, 0x4b11).ram().share("sprhi");      // per-sprite high bank: [0..7]=hw sprites, [8..9]=extended
-	map(0x4b12, 0x4fef).ram();
+	map(0x4b12, 0x4bbf).ram();
+	map(0x4bc0, 0x4bc9).ram().share("sprx9");      // signed high byte of each slot's 9-bit position
+	map(0x4bca, 0x4fef).ram();
 	map(0x4ff0, 0x4fff).ram().share("spriteram");
 	map(0x5000, 0x503f).portr("P1");
 	map(0x5000, 0x5007).w("latch1", FUNC(ls259_device::write_d0));
@@ -266,15 +270,20 @@ void pac4eva_state::draw_sprites(screen_device &screen, bitmap_ind16 &bitmap, co
 				m_palette->transpen_mask(*m_gfxdecode->gfx(1), color & 0x3f, 0));
 	};
 
-	// Absolute Y, plus the 3-region shift: colour bit5 = region B (+256), bit6 = region C (-256).
-	// 75 is the render-align constant (-31 + 106); it replaces the stock +0x6a scroll shift so
-	// coordinates stay native. The hardware scroll is deliberately NOT added.
-	auto sprite_y = [] (uint8_t coord, uint8_t color) -> int
+	// Absolute Y = a real 9-bit position: an 8-bit low byte from the sprite coordinate plus a
+	// SIGNED high byte from sprx9 ($4bc0+slot). 75 is the render-align constant (-31 + 106); it
+	// replaces the stock +0x6a scroll shift so coordinates stay native. The hardware scroll is
+	// deliberately NOT added.
+	//
+	// This used to read colour bits 5/6 (bit5 = +256, bit6 = -256). That put the two halves of
+	// one coordinate in two unrelated pipelines - the low byte arrived via the ISR's position
+	// block-copy, the high half via a separate colour stamp computed from a DIFFERENT number -
+	// and any frame they disagreed across the 8-bit wrap threw the sprite a whole band sideways.
+	// See workshop-region-fix.md; measured at 150 such events in 285s of play.
+	auto sprite_y = [this] (uint8_t coord, int slot) -> int
 	{
-		int sy = coord + 75;
-		if (color & 0x20) sy += 256;
-		else if (color & 0x40) sy -= 256;
-		return sy;
+		int hi = m_sprx9 ? (int8_t)m_sprx9[slot] : 0;
+		return coord + 75 + hi * 256;
 	};
 
 	/* Draw the sprites. Note that it is important to draw them exactly in this */
@@ -284,7 +293,7 @@ void pac4eva_state::draw_sprites(screen_device &screen, bitmap_ind16 &bitmap, co
 	for (int offs = m_spriteram.bytes() - 2; offs > 2*2; offs -= 2)
 	{
 		int sx = 272 - spriteram_2[offs + 1];
-		int sy = sprite_y(spriteram_2[offs], spriteram[offs + 1]);
+		int sy = sprite_y(spriteram_2[offs], offs >> 1);
 
 		uint8_t fx = spriteram[offs] & 1;
 		uint8_t fy = spriteram[offs] & 2;
@@ -305,7 +314,7 @@ void pac4eva_state::draw_sprites(screen_device &screen, bitmap_ind16 &bitmap, co
 	for (int offs = 2*2; offs >= 0; offs -= 2)
 	{
 		int sx = 272 - spriteram_2[offs + 1];
-		int sy = sprite_y(spriteram_2[offs], spriteram[offs + 1]);
+		int sy = sprite_y(spriteram_2[offs], offs >> 1);
 
 		uint8_t fx = spriteram[offs] & 1;
 		uint8_t fy = spriteram[offs] & 2;
@@ -329,7 +338,7 @@ void pac4eva_state::draw_sprites(screen_device &screen, bitmap_ind16 &bitmap, co
 			if (!img) continue;                 // img 0 = inactive
 			uint8_t col = m_spritext[e*4+1];
 
-			int sy = sprite_y(m_spritext[e*4+2], col);
+			int sy = sprite_y(m_spritext[e*4+2], 8 + e);
 			int sx = 272 - m_spritext[e*4+3];
 
 			int color = (col & 0x1f) | (m_colortablebank << 5) | (m_palettebank << 6);
@@ -551,7 +560,7 @@ void pac4eva_state::pac4eva(machine_config &config)
 */
 ROM_START( pac4eva )
 	ROM_REGION( 0x10000, "maincpu", 0 )
-	ROM_LOAD( "jr.pac-man_8d_11-9-83.8d",    0x0000, 0x2000, CRC(e99e4500) SHA1(dce7731c63d6d55bcb59f6aa38f216a0e0fee42e) )
+	ROM_LOAD( "jr.pac-man_8d_11-9-83.8d",    0x0000, 0x2000, CRC(139a02d0) SHA1(a21634deecf2dc2e364248cb99912fddd1a9d136) )
 	ROM_LOAD( "jr.pac-man_8e_11-9-83.8e",    0x2000, 0x2000, CRC(cecd969f) SHA1(d7bdc5730db9dc6689227e806b778c43c00cea48) )
 	ROM_LOAD( "jr.pac-man_8h_11-9-83.8h",    0x8000, 0x2000, CRC(005a0c5d) SHA1(c3c08d526560fc416482c97e0cff6ba8855c3b9c) )
 	ROM_LOAD( "jr.pac-man_8j_11-9-83.8j",    0xa000, 0x2000, CRC(8f10e62a) SHA1(c98b5655a61bb9cbca0f3296308a6467128e7e3c) )
@@ -559,7 +568,7 @@ ROM_START( pac4eva )
 	ROM_LOAD( "pac4eva.5y",                  0x5180, 0x0680, CRC(05ce6ee7) SHA1(040d3e31a3ad840c199feedeb9c337665ee785f6) ) // expansion ROM 4 (per-player chains; plaintext)
 	ROM_LOAD( "pac4eva.5x",                  0x5800, 0x0800, CRC(436c5e24) SHA1(77937c9c5dac268bb2fbffc2e44339c425a8b2d8) ) // expansion ROM 3 (bulk game data; plaintext)
 	ROM_LOAD( "pac4eva.6x",                  0x6000, 0x2000, CRC(7343cdd4) SHA1(9289fe93045981f8f1d7803ac1ad9631d137d2ae) ) // expansion ROM 2 (engine modules + maze tables; plaintext)
-	ROM_LOAD( "pac4eva.8x",                  0xe000, 0x2000, CRC(ffb431c1) SHA1(2d8a5d1d3a53a42a41bf1f19467e31506909694c) ) // expansion ROM (screens, ghost engine; plaintext)
+	ROM_LOAD( "pac4eva.8x",                  0xe000, 0x2000, CRC(12dfa9fa) SHA1(07d993adcaef95f3b2a105df930b16033cf63a41) ) // expansion ROM (screens, ghost engine; plaintext)
 
 	ROM_REGION( 0x6000, "gfx1", 0 )   // tiles 0x2000 + sprites 0x4000 (256 shapes)
 	ROM_LOAD( "jr.pac-man_2c_11-9-83.2c",    0x0000, 0x2000, CRC(a624f5cb) SHA1(90809d9d30df183461c0c40f2da941a21fec6d5c) ) /* tiles (512) */
