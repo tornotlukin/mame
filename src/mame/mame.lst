@@ -16342,6 +16342,7 @@ mshvsfh
 mshvsfj
 mshvsfj1
 mshvsfj2
+mshvsf2v2
 mshvsfu
 mshvsfu1
 mshvsfu1d
@@ -16355,6 +16356,8 @@ mvscjr1
 mvscjsing
 mvscr1
 mvscu
+mvsc2v2
+mvscduo
 mvscud
 mvscur1
 nwarr
@@ -36547,6 +36550,9 @@ thief
 @source:pacman/jrpacman.cpp
 jrpacman
 jrpacmanf
+
+@source:pacman/pac4eva.cpp
+pac4eva
 
 @source:pacman/pacman.cpp
 8bpm
