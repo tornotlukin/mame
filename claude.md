@@ -23,12 +23,17 @@ Work streams are SEPARATE branches, **all siblings based directly on the current
 | Branch | Contents | Rule |
 |--------|----------|------|
 | `llm-debugger` | MCP/ addon, debugremote, debugger UI tweaks, project docs | NO game-driver changes |
-| `jrpacman-4p` | `jrpacman:` game-board mods (`src/mame/pacman/*`) for pac-man-4ever | pure mod, PR-able |
-| `rp6-android` | **Composition**: merge of the above + MAME4droid myosd OSD overlay + Android build glue | what the Android core builds from (see `workshop-mame-android.md`) |
-| (planned) `cps2-4p` | CPS2 4-player fighting-game mod (`src/mame/capcom/*`) | own branch off upstream when started |
+| `pac4eva` | Pac-Man 4 EVA — **one added file**, `src/mame/pacman/pac4eva.cpp` (+ its `mame.lst` line) | additions only; touches NO stock source |
+| `vs-4p-mod` | CPS2 4-player mods (`src/mame/capcom/cps2.cpp`) — xmvsf/mshvsf/mvsc 2v2 + mvscduo | pure mod, PR-able |
+| `modalicious` | **Composition**: `pac4eva` + `vs-4p-mod` + the Modalicious subtarget (`src/mame/modalicious.lst`, `scripts/target/mame/modalicious.lua`) | builds `mamemodalicious.exe` — the curated mods-only exe |
+| `rp6-android` | **Composition**: `llm-debugger` + the game mods + MAME4droid myosd OSD overlay + Android build glue | what the Android core builds from (see `workshop-mame-android.md`) |
 
-New commits go to the branch that owns the stream — never mix. Merge streams only in
-`rp6-android` (or future composition branches).
+New commits go to the branch that owns the stream — never mix. Merge streams only in the
+composition branches (`modalicious`, `rp6-android`).
+
+> **2026-08-09 restructure:** `vs-4p-mod` used to be *stacked on* `llm-debugger`; it is now a
+> plain sibling of the base tag (pure `cps2.cpp` only). Keep it that way — see the upgrade
+> section for why stacking hurts.
 
 Build note: `pac4eva.exe` (the exe the game project launches) is built from THIS tree via
 the game repo's `tools/build_mame.sh` — **whichever branch is checked out is what it
