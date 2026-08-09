@@ -86,6 +86,41 @@ Goal: MAME on the Retroid Pocket 6 with full controller access, built from OUR f
   `MYOSD_NUM_JOY=4` cap; native `input.cpp` already registers 6-axis MAME devices;
   L3/R3 commented out at `input.cpp:172`.
 
+## ⚠️ OTHER PROJECTS AUTHOR BRANCHES IN THIS REPO — check before you touch them
+
+Some branches here are **written by other projects' LLM instances, not by you**:
+
+| Branch | Driven by | Contains |
+|--------|-----------|----------|
+| `pac4eva` | `H:\_DEV\pac-man-4ever` | the Pac-Man 4 EVA driver + its ROM_START hashes |
+| `vs-4p-mod` | `H:\_DEV\capcom-4play-vs` | the CPS2 2v2 / Duo driver mods |
+
+Consequence: at any moment those branches may hold **commits that were never pushed**, or
+**uncommitted working-tree edits**, made outside this session. You will not have seen them.
+
+**Rule — only when a command actually interacts with one of those branches** (checkout,
+merge, rebase, cherry-pick, build-from, push, force-push), check FIRST and TELL THE USER
+what you found before proceeding:
+
+```bash
+git status --short                              # uncommitted edits?
+git rev-list --count origin/<branch>..<branch>  # unpushed commits?
+git log --oneline origin/<branch>..<branch>     # ...which ones
+```
+
+Report it plainly — e.g. *"`vs-4p-mod` has 3 unpushed commits and 1 modified file"* — and
+say what you intend to do about it. **Never rebase, reset, force-push or hard-checkout over
+unpushed/uncommitted work from another project without telling the user**; that work may
+exist nowhere else. Rebases in particular rewrite history that the other project may still
+be building on.
+
+Do NOT run these checks when the task has nothing to do with those branches — this is a
+targeted precaution, not a routine greeting.
+
+Related: the driver's baked ROM hashes and the other project's built ROM zip are a matched
+pair — see the rebuild routine notes (refresh `pac4eva.zip` from
+`H:\_DEV\pac-man-4ever\build\modroms\` whenever pac4eva driver commits land).
+
 ## Related Tooling (outside this repo)
 
 - **`/mame-rom` skill** (user-global, `~/.claude/skills/mame-rom/`): parses any game's
