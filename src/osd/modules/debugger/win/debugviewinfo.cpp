@@ -693,8 +693,8 @@ debug_view_xy debugview_info::screen_to_view_pos(int x, int y) const
 	debug_view_xy const topleft = m_view->visible_position();
 	debug_view_xy const total = m_view->total_size();
 	debug_view_xy pos;
-	pos.x = std::max(0, std::min<int>(topleft.x + x / (int)metrics().debug_font_width(), total.x - 1));
-	pos.y = std::max(0, std::min<int>(topleft.y + y / (int)metrics().debug_font_height(), total.y - 1));
+	pos.x = std::max(0, std::min<int>(topleft.x + x / (int)m_owner.metrics().debug_font_width(), total.x - 1));
+	pos.y = std::max(0, std::min<int>(topleft.y + y / (int)m_owner.metrics().debug_font_height(), total.y - 1));
 	return pos;
 }
 
@@ -1309,8 +1309,8 @@ LRESULT debugview_info::view_proc(UINT message, WPARAM wparam, LPARAM lparam)
 			debug_view_xy const topleft = m_view->visible_position();
 			debug_view_xy const visiblesize = m_view->visible_size();
 			debug_view_xy newpos;
-			newpos.x = std::max(std::min<int>(topleft.x + GET_X_LPARAM(lparam) / metrics().debug_font_width(), topleft.x + visiblesize.x - 1), 0);
-			newpos.y = std::max(std::min<int>(topleft.y + GET_Y_LPARAM(lparam) / metrics().debug_font_height(), topleft.y + visiblesize.y - 1), 0);
+			newpos.x = std::max(std::min<int>(topleft.x + GET_X_LPARAM(lparam) / m_owner.metrics().debug_font_width(), topleft.x + visiblesize.x - 1), 0);
+			newpos.y = std::max(std::min<int>(topleft.y + GET_Y_LPARAM(lparam) / m_owner.metrics().debug_font_height(), topleft.y + visiblesize.y - 1), 0);
 			m_view->process_click(DCK_LEFT_CLICK, newpos);
 			break;
 		}
