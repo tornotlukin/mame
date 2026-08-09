@@ -9,6 +9,7 @@
 
 // MAME headers
 #include "emu.h"
+#include "input.h"      // 0.289: input_manager no longer complete via emu.h
 #include "inputdev.h"
 #include "ui/uimain.h"
 //#include "emuopts.h"
