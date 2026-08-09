@@ -3,13 +3,22 @@
 ## Repo / Remotes
 
 - This is a personal fork: `origin` = https://github.com/tornotlukin/mame.git,
-  `upstream` = https://github.com/mamedev/mame.git. Base: **mame0288** tag.
-- Installed play copy: **`H:\mame\mame.exe`** = full 0.288 build + llm-debugger
-  (built from this tree); `H:\mame\mameold.exe` = stock 0.288 backup.
+  `upstream` = https://github.com/mamedev/mame.git.
+- **BASE = THE NEWEST MAME TAG WE HAVE MIGRATED TO — currently `mame0289`** (migrated
+  2026-08-09; previously mame0288, before that mame0286).
+  > ⚠️ **This number goes stale — do NOT treat it as a blocker.** It records the last
+  > migration, not a requirement. If upstream has newer tags, that is normal and expected;
+  > it does not mean anything is broken. Determine the real base at any time with:
+  > `git describe --tags --abbrev=0 <branch>`. To move the fork to a newer release, follow
+  > the documented upgrade procedure (see "Upgrading to a new MAME release" below) — never
+  > refuse or stall merely because the version here differs from what upstream now offers.
+- Installed play copy: **`H:\mame\mame.exe`** = full build + llm-debugger (built from this
+  tree); `H:\mame\mameold.exe` = stock backup. Curated exe: `H:\_DEV\modalicious\`.
 
 ## BRANCH MAP / COMMIT HYGIENE (directive 2026-07-04, split executed 2026-07-05)
 
-Work streams are SEPARATE branches, all based on `mame0288`:
+Work streams are SEPARATE branches, **all siblings based directly on the current base tag**
+(never stacked on each other — see "Upgrading to a new MAME release"):
 
 | Branch | Contents | Rule |
 |--------|----------|------|
@@ -23,9 +32,38 @@ New commits go to the branch that owns the stream — never mix. Merge streams o
 
 Build note: `pac4eva.exe` (the exe the game project launches) is built from THIS tree via
 the game repo's `tools/build_mame.sh` — **whichever branch is checked out is what it
-plays**, so check out `jrpacman-4p` (or `rp6-android`) before building pac4eva; plain
-`llm-debugger` has no game mods. The game repo's `drivers/` folder + `pac4eva-mame.patch`
-remain a branch-independent fallback.
+plays**, so check out `pac4eva` (or a composition branch) before building pac4eva; plain
+`llm-debugger` has no game mods. The game repo's `drivers/` folder remains a
+branch-independent fallback.
+
+## Upgrading to a new MAME release (procedure that worked 0.288 → 0.289)
+
+A newer upstream tag is NORMAL. Migrating is routine — follow this order; it is the order
+that avoids the traps we actually hit.
+
+1. **Fetch + pick the tag:** `git fetch upstream --tags`; newest = `git tag | sort -V | tail -3`.
+2. **Triage the risk BEFORE touching anything** — for each file our branches modify, ask how
+   much upstream churned it: `git diff --shortstat <oldtag> <newtag> -- <file>`. This turns
+   an unknown into a short list of expected conflicts (0.289: only 2 files conflicted).
+3. **Backup every branch first:** `git tag -f backup-<oldtag>/<branch> <branch>`. Non-negotiable.
+4. **Rebase each SOURCE branch** onto the new tag:
+   `git rebase --onto <newtag> <oldtag> <branch>` — do `llm-debugger`, `pac4eva`, `vs-4p-mod`.
+   Branches are siblings, so order does not matter and conflicts stay isolated per branch.
+   > **TRAP (cost us a false start):** if a branch was ever *stacked* on another (vs-4p-mod
+   > used to sit on llm-debugger), rebasing it onto the tag replays the parent's commits too
+   > and re-hits the same conflicts. Replay only its own commits:
+   > `git rebase --onto <newtag> <old-parent-tip> <branch>` — which also converts it into a
+   > proper sibling. **Keep every work branch a sibling of the tag; never stack them.**
+   > This is safe because the debugger (`MCP/`, `src/osd/**`) and the game mods
+   > (`src/mame/**`) touch DISJOINT files — verified; compositions merge conflict-free.
+5. **REBUILD the composition branches, don't rebase them** (they are merge-shaped):
+   recreate `modalicious` / `rp6-android` from the rebased sources + their own unique commits.
+6. **Verify before pushing:** build Modalicious → `modalicious.exe -verifyroms "*"` must be
+   7/7; build the Android core + APK. Only then force-push (backups still exist).
+7. **Update this file's base-tag line** (top of Repo/Remotes) to the new tag.
+
+Conflict style seen in practice: upstream refactors (e.g. `metrics()` → a local `metrics`
+ref) or deletes debug blocks; keep OUR functional change, adopt THEIR form/removal.
 
 ## Android Project (RP6 / MAME4droid)
 
