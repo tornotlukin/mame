@@ -16530,6 +16530,7 @@ xmvsfu
 xmvsfu1d
 xmvsfur1
 xmvsfur2
+xmvsf2v2
 
 @source:capcom/cps3.cpp
 cps3boot
