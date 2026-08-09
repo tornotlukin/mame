@@ -25,11 +25,23 @@ Work streams are SEPARATE branches, **all siblings based directly on the current
 | `llm-debugger` | MCP/ addon, debugremote, debugger UI tweaks, project docs | NO game-driver changes |
 | `pac4eva` | Pac-Man 4 EVA — **one added file**, `src/mame/pacman/pac4eva.cpp` (+ its `mame.lst` line) | additions only; touches NO stock source |
 | `vs-4p-mod` | CPS2 4-player mods (`src/mame/capcom/cps2.cpp`) — xmvsf/mshvsf/mvsc 2v2 + mvscduo | pure mod, PR-able |
+| `mame-windows` | **Composition**: `llm-debugger` + `modalicious` | builds the full Windows `mame.exe` installed at `H:\mame` — MAME + debugger + all mods. THE main play/dev build |
 | `modalicious` | **Composition**: `pac4eva` + `vs-4p-mod` + the Modalicious subtarget (`src/mame/modalicious.lst`, `scripts/target/mame/modalicious.lua`) | builds `mamemodalicious.exe` — the curated mods-only exe |
 | `rp6-android` | **Composition**: `llm-debugger` + the game mods + MAME4droid myosd OSD overlay + Android build glue | what the Android core builds from (see `workshop-mame-android.md`) |
 
 New commits go to the branch that owns the stream — never mix. Merge streams only in the
-composition branches (`modalicious`, `rp6-android`).
+composition branches (`mame-windows`, `modalicious`, `rp6-android`).
+
+### The three build artifacts, and when to rebuild each (user decision 2026-08-09)
+
+| Build | From | Rebuild when |
+|-------|------|--------------|
+| **`H:\mame\mame.exe`** — full MAME + debugger + mods | `mame-windows` | releases; anything you want to *play or debug* on the PC (~40 min) |
+| **MAMEalicious APK** — full MAME on the RP6 | `rp6-android` | releases for the handheld (~40 min + APK; also push matching ROM zips) |
+| **`H:\_DEV\modalicious\modalicious.exe`** — curated 5-game "mod cabinet" | `modalicious` | **dev/showcase only — NOT every release.** Use it while iterating on mods: ~3 min build, and `-verifyroms "*"` gives a crisp 7/7 over exactly the five mod sets (the full build's audit is drowned in 42k machines) |
+
+`mame-windows` deliberately does NOT come from `rp6-android` — that branch's myosd/netplay core
+patches would leave undefined symbols in a non-Android build.
 
 > **2026-08-09 restructure:** `vs-4p-mod` used to be *stacked on* `llm-debugger`; it is now a
 > plain sibling of the base tag (pure `cps2.cpp` only). Keep it that way — see the upgrade
