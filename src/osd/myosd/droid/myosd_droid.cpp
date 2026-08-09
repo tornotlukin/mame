@@ -1,13 +1,13 @@
 // license:BSD-3-Clause
 //============================================================
 //
-//  myosd-droid.cpp - Implementation of osd droid stuff
+//  myosd_droid.cpp - Implementation of osd droid stuff
 //
 //  MAME4DROID  by David Valdeita (Seleuco)
 //
 //============================================================
 
-#include "myosd-droid.h"
+#include "myosd_droid.h"
 #include "opensl_snd.h"
 
 
@@ -21,6 +21,7 @@
 //#include "emuopts.h"
 
 #include "netplay.h"
+#include "myosd_netplay.h"
 #include "skt_netplay.h"
 
 #include <pthread.h>
@@ -35,7 +36,7 @@
 #include "myosd_core.h"
 #include "myosd_saf.h"
 
-#include "com_seleuco_mame4droid_Emulator.h" // local copy; app repo is a sibling checkout, not a parent dir
+#include "com_seleuco_mame4droid_Emulator.h" // local copy; app repo is a sibling checkout
 
 #define MIN(a,b) ((a)<(b) ? (a) : (b))
 #define MAX(a,b) ((a)<(b) ? (b) : (a))
@@ -51,6 +52,7 @@ static int myosd_droid_video_width = 1;
 static int myosd_droid_video_height = 1;
 static int myosd_droid_resolution = 1;
 static int myosd_droid_resolution_osd = 1;
+static int myosd_droid_ui_font_rows = 25;
 static int myosd_droid_res_width = 1;
 static int myosd_droid_res_height = 1;
 static int myosd_droid_res_width_osd = 1;
@@ -116,6 +118,8 @@ static std::string myosd_droid_selected_game;
 static std::string myosd_droid_rom_name;
 static std::string myosd_droid_cli_params;
 static std::string myosd_droid_overlay_effect;
+static std::string myosd_droid_language;
+static int myosd_droid_force_unifont = 0;
 static int myosd_droid_auto_frameskip = 0;
 static int myosd_droid_cheats = 0;
 static int myosd_droid_skip_gameinfo = 0;
@@ -159,6 +163,9 @@ static OPENSL_SND *opensl_snd_ptr  = nullptr;
 //netplay
 int myosd_droid_netplay_restarting = 0;
 std::string myosd_netplay_selected_game = "";
+int myosd_droid_is_netplay_active(void);
+/* Netplay session sample-rate override  */
+static int myosd_droid_netplay_forced_rate = 0;
 
 //Android callbacks
 static void (*dumpVideo_callback)(void) = nullptr;
@@ -335,6 +342,9 @@ void myosd_droid_setMyValue(int key, int i, int value) {
         case com_seleuco_mame4droid_Emulator_VECTOR_IMPROVED:
             myosd_droid_vector_improved = value;;
             break;
+        case com_seleuco_mame4droid_Emulator_FORCE_UNIFONT:
+            myosd_droid_force_unifont = value;
+            break;
         case com_seleuco_mame4droid_Emulator_SHOW_FPS:
             myosd_droid_show_fps = value;
             break;
@@ -477,6 +487,15 @@ int myosd_droid_getMyValue(int key, int i) {
                 return netplay_get_handle() ? netplay_get_handle()->has_connection : 0;
             case com_seleuco_mame4droid_Emulator_NETPLAY_HAS_JOINED:
                 return netplay_get_handle() ? netplay_get_handle()->has_joined : 0;
+            case com_seleuco_mame4droid_Emulator_NETPLAY_IN_ROLLBACK: {
+                /* 1 only when a ROLLBACK session is live (gates the Resync
+                 * button).  rollback_enabled matters: the big-state fallback
+                 * may have silently switched the session to LOCKSTEP after
+                 * the mode was chosen in the UI.                           */
+                netplay_t *h = netplay_get_handle();
+                return (h && h->has_connection && h->has_begun_game &&
+                        h->mode == NETPLAY_MODE_ROLLBACK && h->rollback_enabled) ? 1 : 0;
+            }
             default :
                 return -1;
         }
@@ -505,6 +524,10 @@ void myosd_droid_setMyValueStr(int key, int i, const char *value) {
         }
         case com_seleuco_mame4droid_Emulator_CLI_PARAMS: {
             myosd_droid_cli_params = std::string(value);
+            break;
+        }
+        case com_seleuco_mame4droid_Emulator_LANGUAGE: {
+            myosd_droid_language = std::string(value);
             break;
         }
         case com_seleuco_mame4droid_Emulator_GAME_SELECTED:
@@ -863,8 +886,10 @@ int myosd_droid_setTouchData(int i, int touchAction,  float cx, float cy) {
     } else if (touchAction == com_seleuco_mame4droid_Emulator_FINGER_UP)
     {
         myosd_inputevent ev;
-        ev.data.pointer_data.x = cx;
-        ev.data.pointer_data.y = cy;
+        // Java sends (-1,-1) when the release coordinates were lost (or on
+        // input reset): release at the last known position
+        ev.data.pointer_data.x = (cx < 0 || cy < 0) ? last_cx : cx;
+        ev.data.pointer_data.y = (cx < 0 || cy < 0) ? last_cy : cy;
 
         ev.type = ev.MYOSD_FINGER_UP;
         ev.data.pointer_data.double_action = double_tap;
@@ -1012,6 +1037,11 @@ static void droid_init(void) {
         int reswidth = 640, resheight = 480;
         int reswidth_osd = 640, resheight_osd = 480;
 
+        /* Auto game resolution implies the low-res OSD (400x300). Derive a
+         * local effective value instead of writing back into the Java-owned
+         * resolution_osd, so it can't desync with setValue ordering. */
+        int eff_resolution_osd = (myosd_droid_resolution == 0) ? 0 : myosd_droid_resolution_osd;
+
         switch (myosd_droid_resolution)
         {
             case 0:{reswidth = 0;resheight = 0;break;}//400x300 (4/3)
@@ -1027,7 +1057,7 @@ static void droid_init(void) {
             case 10:{reswidth = myosd_droid_res_width_native;resheight = myosd_droid_res_height_native;break;}//fullscreen
         }
 
-        switch (myosd_droid_resolution_osd)
+        switch (eff_resolution_osd)
         {
             case 0:{reswidth_osd = 400;resheight_osd = 300;break;}
            // case 11:{reswidth_osd = 450;resheight_osd = 300;break;}
@@ -1126,19 +1156,30 @@ static void droid_video_change_cb(int width, int height,int vis_width, int vis_h
 static void myosd_droid_netplay_force_disconnect(const char* context_msg) {
     netplay_t *handle = netplay_get_handle();
     if (handle && handle->has_connection) {
-        if (!handle->has_begun_game) {
+        bool failed_to_start = !handle->has_begun_game;
+        if (failed_to_start) {
             __android_log_print(ANDROID_LOG_DEBUG, "MAME4droid_Netplay",
                 "%s - Game failed to start, forcing netplay disconnection", context_msg);
-            char msg[] = "TOAST:Netplay: Error loading ROM. Disconnected.";
-            if (handle->netplay_warn)
-                handle->netplay_warn(msg);
         } else {
             __android_log_print(ANDROID_LOG_DEBUG, "MAME4droid_Netplay",
                 "%s - forcing netplay disconnection", context_msg);
         }
+
+        /* netplay_send_disconnect() early-returns if !has_connection, so the
+         * burst must go out BEFORE clearing it. */
         netplay_send_disconnect(handle);
         handle->has_connection = 0;
         handle->has_begun_game = 0;
+
+        /* Notify Java LAST, only once has_connection is already 0: it checks
+         * NETPLAY_HAS_CONNECTION live to release the Wi-Fi lock and hide the
+         * overlay, and Activity.runOnUiThread can run synchronously, so
+         * warning earlier could see a stale has_connection==1 and skip it. */
+        if (handle->netplay_warn) {
+            char msg[] = "TOASTOK:@disconnected";
+            char err_msg[] = "TOAST:@rom_error";
+            handle->netplay_warn(failed_to_start ? err_msg : msg);
+        }
     }
 }
 
@@ -1173,7 +1214,11 @@ static void droid_video_draw_cb(int skip_redraw, int in_game, int in_menu, int r
 
     //__android_log_print(ANDROID_LOG_DEBUG, "libMAME4droid.so", "inGame %d inMenu %d running %d",in_game,in_menu,running);
 
-    if(!skip_redraw)
+    /* Suppress video render during rollback fast-forward to avoid visual glitches.
+     * EXCEPT during the RB_SELFCHECK determinism probe: there we want the resim
+     * frame to hit the EXACT same OSD path as a forward frame, so we can attribute
+     * (or rule out) any FF-mode side effect as the source of non-determinism. */
+    if(!skip_redraw && (!myosd_netplay_get_ff_active() || myosd_netplay_get_selfcheck_probe()))
        droid_dump_video();
 
     droid_myosd_check_pause();
@@ -1271,11 +1316,20 @@ static void droid_input_poll_cb(bool relative_reset,
         if(myosd_droid_do_pause){
             myosd_pause(true);
             myosd_droid_do_pause = 0;
+            /* DIAG (spurious peer-paused): log every DEFERRED pause applied while
+             * a netplay session is live, with the netplay frame, to catch a
+             * stale pre-game pause landing a few frames into the fresh machine. */
+            if (myosd_droid_is_netplay_active())
+                __android_log_print(ANDROID_LOG_DEBUG, "MAME4droid_Netplay",
+                    "PAUSE_DIAG deferred pause(true) applied, netplay frame=%u", netplay_get_handle()->frame);
         }
 
         if(myosd_droid_do_resume){
             myosd_pause(false);
             myosd_droid_do_resume = 0;
+            if (myosd_droid_is_netplay_active())
+                __android_log_print(ANDROID_LOG_DEBUG, "MAME4droid_Netplay",
+                    "PAUSE_DIAG deferred pause(false) applied, netplay frame=%u", netplay_get_handle()->frame);
         }
     }
 }
@@ -1290,8 +1344,10 @@ void droid_sound_init_cb(int rate, int stereo){
             if (openSound_callback != nullptr)
                 openSound_callback(rate, stereo);
         } else {
-            __android_log_print(ANDROID_LOG_DEBUG, "SOUND", "Open openSL %d %d", myosd_droid_sound_value, myosd_droid_sound_frames);
-            opensl_snd_ptr  = opensl_open(myosd_droid_sound_value, 2, myosd_droid_sound_frames);
+            /* Open at the rate MAME actually produces (`rate`), not the local
+             * preference: netplay can force a different one. */
+            __android_log_print(ANDROID_LOG_DEBUG, "SOUND", "Open openSL %d %d", rate, myosd_droid_sound_frames);
+            opensl_snd_ptr  = opensl_open(rate, 2, myosd_droid_sound_frames);
         }
 
         soundInit = 1;
@@ -1299,6 +1355,10 @@ void droid_sound_init_cb(int rate, int stereo){
 }
 void droid_sound_play_cb(void *buff, int len){
     //__android_log_print(ANDROID_LOG_DEBUG, "PIS", "BUF %d",len);
+    /* Mute audio during rollback fast-forward to eliminate audio pops.
+     * EXCEPT during the RB_SELFCHECK probe: keep the audio path identical to a
+     * forward frame so the determinism comparison is not contaminated by mute. */
+    if (myosd_netplay_get_audio_mute() && !myosd_netplay_get_selfcheck_probe()) return;
     if(sound_engine==1)
     {
         if(dumpSound_callback!=nullptr)
@@ -1355,6 +1415,15 @@ static void split_in_args(std::vector <std::string> &qargs, std::string command)
 }
 
 //main entry point to MAME
+/* Boot-time UI rows policy for mame_ui_manager::load_ui_options(): 20/25
+ * are mode-managed (low-res OSD / normal) and swap when the mode changes;
+ * any other count is a user pick. Returns the count to force, 0 = keep. */
+int myosd_droid_adjust_ui_font_rows(int current) {
+    if ((current == 20 || current == 25) && current != myosd_droid_ui_font_rows)
+        return myosd_droid_ui_font_rows;
+    return 0;
+}
+
 int myosd_droid_main(int argc, char **argv) {
 
     __android_log_print(ANDROID_LOG_DEBUG, "libMAME4droid.so", "*********** ANDROID MAIN ********");
@@ -1437,6 +1506,15 @@ int myosd_droid_main(int argc, char **argv) {
         n++;
     }
 
+    /* Localize the native MAME UI to match the app language (Java passes the
+     * MAME language folder name, e.g. "Spanish"; "English" is the default). */
+    if(!myosd_droid_language.empty() && myosd_droid_language != "English") {
+        args[n] = "-language";
+        n++;
+        args[n] = myosd_droid_language.c_str();
+        n++;
+    }
+
 
     if(myosd_num_processors!=-1) {
         __android_log_print(ANDROID_LOG_DEBUG, "libMAME4droid.so", "Num processors: %d",myosd_num_processors);
@@ -1503,16 +1581,16 @@ int myosd_droid_main(int argc, char **argv) {
         args[n] = "0.4";n++;
     }
 
-    if(myosd_droid_sound_value==-1)
-    {
-        args[n] = "-sound";n++;
-        args[n] = "none";n++;
-    }
+        if(myosd_droid_sound_value==-1)
+        {
+            args[n] = "-sound";n++;
+            args[n] = "none";n++;
+        }
     else
-    {
+        {
         static std::string value = std::to_string(myosd_droid_sound_value);
-        args[n] = "-samplerate";n++;
-        args[n] = value.c_str();n++;
+            args[n] = "-samplerate";n++;
+            args[n] = value.c_str();n++;
     }
 
     if(myosd_droid_auto_frameskip)
@@ -1528,11 +1606,36 @@ int myosd_droid_main(int argc, char **argv) {
         args[n] = "1.0";n++;
     }
 
-    if(myosd_droid_resolution==0 || myosd_droid_resolution_osd==0)
+    /* UI font per OSD resolution: low-res OSD keeps the bitmap fonts
+     * readable (uismall Latin / unifont CJK, 20 rows); otherwise system
+     * font via myosd_font.cpp (25 rows). -uifont ALWAYS explicit: cmdline
+     * outranks mame.ini, so a saved value cannot stick across changes. */
+    bool cjk_ui = myosd_droid_language.rfind("Chinese", 0) == 0
+               || myosd_droid_language == "Japanese"
+               || myosd_droid_language == "Korean";
+    /* auto game res implies low-res OSD even if the OSD pref arrived
+     * (again) after droid_init's forcing - robust to setValue ordering */
+    bool lowres_ui = myosd_droid_resolution_osd==0 || myosd_droid_resolution==0;
+    myosd_droid_ui_font_rows = lowres_ui ? 20 : 25;
+    if(myosd_droid_force_unifont || (cjk_ui && lowres_ui))
+    {
+        args[n] = "-uifont";n++;
+        args[n] = "unifont.bdf";n++;
+    }
+    else if(lowres_ui)
     {
         args[n] = "-uifont";n++;
         args[n] = "uismall.bdf";n++;
     }
+    else
+    {
+        args[n] = "-uifont";n++;
+        args[n] = "default";n++;
+    }
+
+    __android_log_print(ANDROID_LOG_DEBUG, "libMAME4droid.so",
+            "uifont: res=%d res_osd=%d cjk=%d -> %s", myosd_droid_resolution,
+            myosd_droid_resolution_osd, (int)cjk_ui, args[n-1]);
 
     if(myosd_plugin_autofire !=0 || myosd_plugin_hiscore !=0 || myosd_plugin_inputmacro !=0)
     {
@@ -1575,93 +1678,27 @@ int myosd_droid_main(int argc, char **argv) {
     return 0;
 }
 
-// Netplay BRIDGE
-#define NLOG(...) __android_log_print(ANDROID_LOG_DEBUG, "MAME4droid_Netplay", __VA_ARGS__)
+/* ============================================================
+ * Netplay BRIDGE
+ * Droid/JNI glue for netplay.h/netplay.cpp: session control from Java, the
+ * autostart/reload handshake with ui.cpp, session sound-rate sync, and the
+ * per-frame local input read-back netplay.cpp calls into.
+ *
+ * Layout, most central first:
+ *   1. JNI entry points (the trunk): netplayInit and friends
+ *   2. Autostart / game-reload bootstrap
+ *   3. Session state / pause hooks
+ *   4. Sample-rate sync
+ *   5. Per-frame local input read-back (called from netplay.cpp)
+ * ============================================================ */
+#define NLOG(...) do { if(NETPLAY_LOG_ENABLED) __android_log_print(ANDROID_LOG_DEBUG, "MAME4droid_Netplay", __VA_ARGS__); } while(0)
 
-// Netplay helpers
-int myosd_droid_netplay_get_inMenu() { return myosd_droid_inMenu; }
-extern "C" void myosd_pause(bool pause);
-void myosd_droid_netplay_set_exitPause(int val) { if (val) myosd_pause(false); }
-void myosd_droid_netplay_force_pause() { myosd_pause(true); }
-int myosd_droid_netplay_get_ext_status() { return 0; }
+/* ============================================================
+ * SECTION 1 -- JNI entry points (the trunk)
+ * ============================================================ */
 
-unsigned long myosd_netplay_joystick_read(int i) {
-    if (i >= 0 && i < MYOSD_NUM_JOY) return joy_status[i];
-    return 0;
-}
-
-float myosd_netplay_joystick_read_analog(int i, char axis) {
-    if (i >= 0 && i < MYOSD_NUM_JOY) {
-        if (axis == 'x') return joy_analog_x[i];
-        if (axis == 'y') return joy_analog_y[i];
-        if (axis == 'X') return joy_analog_x_r[i];
-        if (axis == 'Y') return joy_analog_y_r[i];
-        if (axis == 'l') return joy_analog_trigger_y[i]; // LZ
-        if (axis == 'r') return joy_analog_trigger_x[i]; // RZ
-    }
-    return 0.0f;
-}
-
-unsigned long myosd_netplay_mouse_read(int i) {
-    if (i >= 0 && i < MYOSD_NUM_MICE) return mouse_status[i];
-    return 0;
-}
-
-float myosd_netplay_mouse_read_analog(int i, char axis) {
-    if (i >= 0 && i < MYOSD_NUM_MICE) {
-        if (axis == 'x') return last_mouse_x[i];
-        if (axis == 'y') return last_mouse_y[i];
-    }
-    return 0.0f;
-}
-
-float myosd_netplay_lightgun_read_analog(int i, char axis) {
-    if (i >= 0 && i < MYOSD_NUM_GUN) {
-        if (axis == 'x') return lightgun_x[i];
-        if (axis == 'y') return lightgun_y[i];
-    }
-    return 0.0f;
-}
-
-static int s_already_scheduled = 0;
-
-void myosd_droid_clear_netplay_force_game(void) {
-    s_already_scheduled = 0;
-    netplay_t *handle = netplay_get_handle();
-    if (handle) {
-        handle->game_name[0] = '\0';
-        handle->has_connection = 0;
-        handle->has_joined = 0;
-    }
-}
-
-const char* myosd_droid_get_netplay_force_game(void) {
-    netplay_t *handle = netplay_get_handle();
-    if(handle && handle->has_connection && handle->has_joined) {
-        if (!s_already_scheduled) {
-            s_already_scheduled = 1;
-            myosd_droid_netplay_restarting = 1;
-            return handle->game_name;
-        }
-    } else {
-        s_already_scheduled = 0;
-    }
-    return NULL;
-}
-
-void myosd_droid_netplay_warn(const char* msg) {
-    netplay_t *handle = netplay_get_handle();
-    if (handle && handle->netplay_warn) {
-        handle->netplay_warn((char*)msg);
-    }
-}
-
-int myosd_droid_is_netplay_active(void) {
-    netplay_t *handle = netplay_get_handle();
-    return (handle && handle->has_connection) ? 1 : 0;
-}
-
-//JNI
+/* Start a session as host (join==0) or client (join==1); with server==NULL
+ * and join==1, retransmit JOIN on an already-open socket instead. */
 extern "C" int netplayInit(const char *server, int port, int join) {
     netplay_t* handle = netplay_get_handle();
 
@@ -1696,8 +1733,236 @@ extern "C" int netplayInit(const char *server, int port, int join) {
     return -1;
 }
 
+/* Java sets its warn/toast callback before calling netplayInit. */
 extern "C" void setNetplayWarnCallback(void *func1) {
     netplay_get_handle()->netplay_warn = (void (*)(char *))func1;
 }
+
+/* Set the netplay mode: 0 = LOCKSTEP (default), 1 = ROLLBACK.
+ * Must be called before netplayInit() so the mode is set before the game starts. */
+extern "C" void netplaySetMode(int mode) {
+    netplay_t *handle = netplay_get_handle();
+    if (handle) {
+        int internal_mode = (mode == 1) ? NETPLAY_MODE_ROLLBACK : NETPLAY_MODE_LOCKSTEP;
+        netplay_set_mode(handle, internal_mode);
+        NLOG("netplaySetMode: mode=%d (%s)", internal_mode,
+             internal_mode == NETPLAY_MODE_ROLLBACK ? "ROLLBACK" : "LOCKSTEP");
+    }
+}
+
+/* Runtime on/off for the CRC desync detector (Java netplay pref, default
+ * on); must be called before netplayInit() like netplaySetMode. Disabling
+ * it saves the per-frame CRC compute cost on this device. */
+extern "C" void netplaySetDesyncDetectorEnabled(int enabled) {
+    netplay_set_crc_detector_enabled(enabled != 0);
+    NLOG("netplaySetDesyncDetectorEnabled: %d", enabled);
+}
+
+/* Internet play: peer public tuple the host hole-punches toward.  Callable
+ * before netplayInit() and hot while waiting; NULL/empty clears it. */
+extern "C" void netplaySetPunchAddr(const char *addr, int port) {
+    skt_netplay_set_punch_addr(addr, (uint16_t)port);
+}
+
+/* Internet play: run STUN on the game socket during the next netplayInit()
+ * (adds up to ~3s to it, so init must be called from a worker thread). */
+extern "C" void netplaySetInternetMode(int on) {
+    skt_netplay_set_internet_mode(on);
+}
+
+/* IP protocol for the next netplayInit(): 0=IPv4 (default), 1=IPv6 strict,
+ * 2=Auto (dual-stack v6 socket that still accepts/reaches v4 peers). */
+extern "C" void netplaySetIpFamily(int mode) {
+    skt_netplay_set_ip_family(mode);
+}
+
+/* Client's local bind port for the next netplayInit() -- its OWN settings
+ * port, never the join target's (that must not leak into our tuple). */
+extern "C" void netplaySetLocalPort(int port) {
+    skt_netplay_set_local_port((uint16_t)port);
+}
+
+/* "ip:port|pp=0/1|sym=0/1" or "" -- valid from netplayInit()'s return until
+ * the next init, queried from the thread that ran init. */
+extern "C" const char *netplayGetPublicAddr(void) {
+    return skt_netplay_get_public_addr();
+}
+
+/* Multi-line connection diagnostics block, same validity as above. */
+extern "C" const char *netplayGetDiagnostics(void) {
+    return skt_netplay_get_diagnostics();
+}
+
+/* One-shot STUN on a throwaway socket to learn OUR public IP before joining,
+ * so Java can tell same-router (LAN) from a 192.168.x collision.  Blocking
+ * (<=1.5s): call from a worker.  Returns the IP or "" (offline / STUN blocked). */
+extern "C" const char *netplayProbePublicIp(void) {
+    static char s_probe_ip[64];
+    s_probe_ip[0] = 0;
+    skt_netplay_probe_public_ip(s_probe_ip, sizeof(s_probe_ip));
+    return s_probe_ip;
+}
+
+/* User-triggered mid-game state resync (rollback only), from the Java
+ * netplay dialog's Resync button.  Any thread: idempotent + mutex-protected. */
+extern "C" int netplayResync(void) {
+    int ret = myosd_netplay_request_resync();
+    NLOG("netplayResync: %s", ret ? "latched" : "not applicable");
+    return ret;
+}
+
+/* ============================================================
+ * SECTION 2 -- Autostart / game-reload bootstrap
+ * ui.cpp's netplay autostart pulls the game name once per join via
+ * myosd_droid_get_netplay_force_game() and reloads the driver through it;
+ * myosd_droid_netplay_restart_pending() keeps netplay dormant on the OLD
+ * machine until that reload actually lands.
+ * ============================================================ */
+
+static int s_already_scheduled = 0;   /* guards get_netplay_force_game so ui.cpp only claims the reload once per join */
+
+/* Reset the bootstrap latches (disconnect / audit-failure abort path). */
+void myosd_droid_clear_netplay_force_game(void) {
+    s_already_scheduled = 0;
+    /* If the autostart already latched a restart, drop that flag too: the
+     * reload is not coming, and a stale flag would eat the NEXT legitimate
+     * game-exit disconnect in droid_video_draw_cb.                          */
+    myosd_droid_netplay_restarting = 0;
+    netplay_t *handle = netplay_get_handle();
+    if (handle) {
+        handle->game_name[0] = '\0';
+        handle->has_connection = 0;
+        handle->has_joined = 0;
+    }
+}
+
+/* Polled by ui.cpp's autostart; returns the game to load exactly once per
+ * join (NULL otherwise), latching s_already_scheduled/restarting. */
+const char* myosd_droid_get_netplay_force_game(void) {
+    netplay_t *handle = netplay_get_handle();
+    if(handle && handle->has_connection && handle->has_joined) {
+        if (!s_already_scheduled) {
+            s_already_scheduled = 1;
+            myosd_droid_netplay_restarting = 1;
+            return handle->game_name;
+        }
+    } else {
+        s_already_scheduled = 0;
+    }
+    return NULL;
+}
+
+/* 1 while a netplay-forced game (re)load is pending or in flight; gates
+ * has_begun_game in myosd_netplay.cpp so the netplay start machinery can
+ * never engage on the PRE-restart machine. */
+int myosd_droid_netplay_restart_pending(void) {
+    if (myosd_droid_netplay_restarting)
+        return 1;
+    netplay_t *handle = netplay_get_handle();
+    if (handle && handle->has_connection &&
+        (!handle->has_joined || !s_already_scheduled))
+        return 1;
+    return 0;
+}
+
+/* Forward a toast/warning to Java, if a callback is registered. */
+void myosd_droid_netplay_warn(const char* msg) {
+    netplay_t *handle = netplay_get_handle();
+    if (handle && handle->netplay_warn) {
+        handle->netplay_warn((char*)msg);
+    }
+}
+
+/* ============================================================
+ * SECTION 3 -- Session state / pause hooks
+ * ============================================================ */
+
+int myosd_droid_is_netplay_active(void) {
+    /* Droid-layer wrapper kept for its existing C consumers (luaengine,
+     * opensl_snd); delegates to the canonical predicate so the "a session is
+     * up" test lives in exactly one place.                                   */
+    return myosd_netplay_is_active() ? 1 : 0;
+}
+
+int myosd_droid_netplay_get_inMenu() { return myosd_droid_inMenu; }   /* whether the MAME menu is up */
+
+extern "C" void myosd_pause(bool pause);
+void myosd_droid_netplay_set_exitPause(int val) { if (val) myosd_pause(false); }   /* unpause on netplay resume */
+void myosd_droid_netplay_force_pause() { myosd_pause(true); }                      /* pause (e.g. peer disconnected) */
+
+/* ============================================================
+ * SECTION 4 -- Sample-rate sync
+ * ============================================================ */
+
+int myosd_droid_get_effective_sound_rate(void) {
+    /* -1 (sound off) still runs MAME at the default samplerate (48000);
+     * advertise the value the machine will ACTUALLY use.                   */
+    return (myosd_droid_sound_value == -1) ? 48000 : myosd_droid_sound_value;
+}
+
+/* Client-side: latch the host's advertised rate from JOIN_ACK. */
+void myosd_droid_set_netplay_sound_rate(int rate) {
+    if (rate > 0 && rate != myosd_droid_get_effective_sound_rate()) {
+        __android_log_print(ANDROID_LOG_DEBUG, "MAME4droid_Netplay",
+            "NETPLAY: adopting host sample rate %d (local effective %d)",
+            rate, myosd_droid_get_effective_sound_rate());
+    }
+    myosd_droid_netplay_forced_rate = rate;
+}
+
+/* The samplerate THIS session must run at (0 = not in netplay); consumed by
+ * ui.cpp's autostart to pin OPTION_SAMPLERATE before schedule_new_driver. */
+int myosd_droid_get_netplay_session_sound_rate(void) {
+    if (!myosd_droid_is_netplay_active()) return 0;
+    return (myosd_droid_netplay_forced_rate > 0)
+             ? myosd_droid_netplay_forced_rate
+             : myosd_droid_get_effective_sound_rate();
+}
+
+/* ============================================================
+ * SECTION 5 -- Per-frame local input read-back
+ * Read by netplay.cpp's local input capture (both lockstep and rollback)
+ * every frame to build the netplay_state_t sent to the peer.
+ * ============================================================ */
+
+unsigned long myosd_droid_netplay_joystick_read(int i) {
+    if (i >= 0 && i < MYOSD_NUM_JOY) return joy_status[i];
+    return 0;
+}
+
+float myosd_droid_netplay_joystick_read_analog(int i, char axis) {
+    if (i >= 0 && i < MYOSD_NUM_JOY) {
+        if (axis == 'x') return joy_analog_x[i];
+        if (axis == 'y') return joy_analog_y[i];
+        if (axis == 'X') return joy_analog_x_r[i];
+        if (axis == 'Y') return joy_analog_y_r[i];
+        if (axis == 'l') return joy_analog_trigger_y[i]; // LZ
+        if (axis == 'r') return joy_analog_trigger_x[i]; // RZ
+    }
+    return 0.0f;
+}
+
+unsigned long myosd_droid_netplay_mouse_read(int i) {
+    if (i >= 0 && i < MYOSD_NUM_MICE) return mouse_status[i];
+    return 0;
+}
+
+float myosd_droid_netplay_mouse_read_analog(int i, char axis) {
+    if (i >= 0 && i < MYOSD_NUM_MICE) {
+        if (axis == 'x') return last_mouse_x[i];
+        if (axis == 'y') return last_mouse_y[i];
+    }
+    return 0.0f;
+}
+
+float myosd_droid_netplay_lightgun_read_analog(int i, char axis) {
+    if (i >= 0 && i < MYOSD_NUM_GUN) {
+        if (axis == 'x') return lightgun_x[i];
+        if (axis == 'y') return lightgun_y[i];
+    }
+    return 0.0f;
+}
+
+int myosd_droid_netplay_get_ext_status() { return 0; }   /* reserved input-vector extension field, unused */
 
 

@@ -213,6 +213,44 @@ osd_common_t::~osd_common_t()
 
 void osd_common_t::register_options()
 {
+// DAV HACK
+#if defined(OSD_DROID)
+	// register only the Android modules: the stock body references dozens
+	// of module_type symbols (bgfx, imgui, asio, SDL/WIN32 stubs...) that
+	// are not compiled into this build and would break the
+	// -Wl,--no-undefined link. See src/osd/myosd.
+	REGISTER_MODULE(m_mod_man, FONT_MYOSD);
+	REGISTER_MODULE(m_mod_man, FONT_NONE);
+
+	REGISTER_MODULE(m_mod_man, RENDERER_MYOSD);
+	REGISTER_MODULE(m_mod_man, RENDERER_NONE);
+
+	REGISTER_MODULE(m_mod_man, SOUND_MYOSD);
+	REGISTER_MODULE(m_mod_man, SOUND_NONE);
+
+	REGISTER_MODULE(m_mod_man, MONITOR_MYOSD);
+
+	REGISTER_MODULE(m_mod_man, DEBUG_NONE);
+
+	REGISTER_MODULE(m_mod_man, NETDEV_NONE);
+
+	REGISTER_MODULE(m_mod_man, MIDI_NONE);
+
+	REGISTER_MODULE(m_mod_man, KEYBOARDINPUT_MYOSD);
+	REGISTER_MODULE(m_mod_man, KEYBOARD_NONE);
+
+	REGISTER_MODULE(m_mod_man, MOUSEINPUT_MYOSD);
+	REGISTER_MODULE(m_mod_man, MOUSE_NONE);
+
+	REGISTER_MODULE(m_mod_man, LIGHTGUNINPUT_MYOSD);
+	REGISTER_MODULE(m_mod_man, LIGHTGUN_NONE);
+
+	REGISTER_MODULE(m_mod_man, JOYSTICKINPUT_MYOSD);
+	REGISTER_MODULE(m_mod_man, JOYSTICK_NONE);
+
+	REGISTER_MODULE(m_mod_man, OUTPUT_NONE);
+#else
+// END DAV HACK
 	REGISTER_MODULE(m_mod_man, FONT_OSX);
 	REGISTER_MODULE(m_mod_man, FONT_WINDOWS);
 	REGISTER_MODULE(m_mod_man, FONT_DWRITE);
@@ -336,6 +374,9 @@ void osd_common_t::register_options()
 	REGISTER_MODULE(m_mod_man, OUTPUT_CONSOLE);
 	REGISTER_MODULE(m_mod_man, OUTPUT_NETWORK);
 	REGISTER_MODULE(m_mod_man, OUTPUT_WIN32);
+// DAV HACK
+#endif // OSD_DROID
+// END DAV HACK
 
 
 	// after initialization we know which modules are supported

@@ -120,6 +120,12 @@ public:
 	void perfect_quantum(const attotime &duration);
 	void suspend_resume_changed() { m_suspend_changes_pending = true; }
 
+// DAV HACK.
+	attotime basetime() const noexcept { return m_basetime; }	
+	void clear_temporary_quanta();
+	void canonicalize_timer_order();
+// END DAV HACK
+
 	// timers, specified by callback/name
 	emu_timer *timer_alloc(timer_expired_delegate callback);
 	[[deprecated("timer_set is deprecated; please avoid anonymous timers. Use an allocated emu_timer instead.")]]

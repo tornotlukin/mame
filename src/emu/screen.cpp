@@ -1717,6 +1717,22 @@ TIMER_CALLBACK_MEMBER(screen_device::vblank_end)
 	m_frame_number++;
 }
 
+// DAV HACK
+// Netplay rollback: a deferred reload restores the machine to mid-vblank_begin
+// (capture happens inside frame_update()/input_update(), before the one-shot
+// timers re-arm), with m_vblank_begin_timer left disabled.  Re-arming it for
+// the NEXT vblank would shift the whole fast-forward replay one frame late.
+// Firing it again NOW, at the restored vblank time, replays that same
+// frame_update()/input_update() call and re-arms the follow-up timers via its
+// own tail, preserving the exact frame<->emulated-time phase of the original run.
+void screen_device::netplay_rearm_vblank()
+{
+	if (m_vblank_begin_timer == nullptr)
+		return;
+
+	m_vblank_begin_timer->adjust(attotime::zero);
+}
+// END DAV HACK
 
 //-------------------------------------------------
 //  create_composited_bitmap - composite scanline

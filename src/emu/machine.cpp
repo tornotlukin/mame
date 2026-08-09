@@ -8,6 +8,7 @@
 
 ***************************************************************************/
 
+
 #include "emu.h"
 
 #include "config.h"
@@ -46,7 +47,11 @@
 #endif
 
 // DAV HACK
-#include "../osd/myosd/netplay.h"
+// netplay bridge.  Forward-declare just the functions we call so this core
+// file stays decoupled from netplay.h
+bool          myosd_netplay_is_active(void);
+time_t        myosd_netplay_basetime(void);
+extern "C" void myosd_netplay_service_deferred_load(void);
 // END DAV HACK
 
 
@@ -173,10 +178,11 @@ void running_machine::start()
 	::time(&m_base_time);
 
 // DAV HACK
-	netplay_t* handle = netplay_get_handle();
-	if (handle && handle->has_connection)
+	// RTC pin: both netplay modes need a deterministic boot clock, so this
+	// applies to ANY active session (not just rollback).
+	if (myosd_netplay_is_active())
 	{
-		m_base_time = handle->basetime;
+		m_base_time = myosd_netplay_basetime();
 	}
 // END DAV HACK
 
@@ -339,6 +345,7 @@ void running_machine::start()
 	manager().update_machine();
 }
 
+
 //-------------------------------------------------
 //  run - execute the machine
 //-------------------------------------------------
@@ -433,6 +440,12 @@ int running_machine::run(bool quiet)
 			// handle save/load
 			if (m_saveload_schedule != saveload_schedule::NONE)
 				handle_saveload();
+// DAV HACK
+			//perform any pending netplay rollback reload HERE, at the
+			// clean scheduler boundary (m_callback_timer==null,
+			// m_executing_device==null), never inside a timeslice/timer callback.
+			myosd_netplay_service_deferred_load();
+// END DAV HACK
 		}
 		m_manager.http()->clear();
 
@@ -1365,6 +1378,17 @@ void system_time::set(time_t t)
 {
 	// FIXME: this crashes if localtime or gmtime returns nullptr
 	time = t;
+// DAV HACK
+	// Netplay: localtime() depends on the device's timezone, so two peers
+	// would derive DIFFERENT RTC fields from the same pinned epoch and
+	// desync at boot -- pin local_time to UTC too during a session.
+	if (myosd_netplay_is_active())
+	{
+		local_time.set(*gmtime(&t));
+		utc_time.set(*gmtime(&t));
+		return;
+	}
+// END DAV HACK
 	local_time.set(*localtime(&t));
 	utc_time.set(*gmtime(&t));
 }

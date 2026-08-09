@@ -44,7 +44,7 @@ class emulator_info
 public:
 	// construction/destruction
 	emulator_info() = default;
-
+	
 // DAV HACK
 	inline static std::string myosd_droid_version;
 // END DAV HACK

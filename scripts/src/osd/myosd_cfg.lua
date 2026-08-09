@@ -9,6 +9,7 @@ dofile('modules.lua')
 
 defines {
 	"OSD_MYOSD",
+	"OSD_DROID",
 	"SDLMAME_NOASM=1",
 	"USE_QTDEBUG=0",
 	"USE_OPENGL=0",

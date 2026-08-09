@@ -79,9 +79,9 @@ private:
 		}
 		return false;
 	}
-};
+};	
 //END DAV HACK
-
+	
 namespace {
 
 std::pair<char const *, char const *> RIGHT_PANEL_NAMES[RP_LAST + 1] = {
@@ -1964,11 +1964,11 @@ bool menu_select_launch::handle_keys(u32 flags, int &iptkey)
 		else if (is_special_main_menu())
 		{
 			// this is the root session menu, exit
-//DAV HACK
+//DAV HACK	
 			//stack_pop();
-			//machine().schedule_exit();
+			//machine().schedule_exit();		
 			menu::stack_push<menu_confirm_exit_frontend>(ui(), target());
-//END DAV HACK
+//END DAV HACK			
 		}
 		return false;
 	}
@@ -3116,17 +3116,19 @@ std::tuple<int, bool, bool> menu_select_launch::update_toolbar_track(bool change
 //DAV HACK
 				//stack_pop();
 				//if (is_special_main_menu())
-					//machine().schedule_exit();
+					//machine().schedule_exit();				
 				if (is_special_main_menu())
 				{
+					// Mostrar confirmación si estamos en el menú principal
 					menu::stack_push<menu_confirm_exit_frontend>(ui(), target());
 				}
 				else
 				{
+					// Retroceder un menú si estamos en un submenú
 					stack_pop();
 					machine().schedule_exit();
-				}
-//END DAV HACK
+				}				
+//END DAV HACK				
 				return std::make_tuple(IPT_UI_BACK, false, true);
 			}
 			else

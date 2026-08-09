@@ -1,4 +1,4 @@
-// license:BSD-3-Clause
+﻿// license:BSD-3-Clause
 //============================================================
 //
 //  myosdmain.cpp - main file for my OSD
@@ -11,6 +11,7 @@
 
 // standard includes
 #include <unistd.h>
+#include <chrono>       // pointer click/hold tracking
 
 // MAME headers
 #include "osdepend.h"
@@ -27,15 +28,18 @@
 #include "corestr.h"
 
 #include "uiinput.h"
+#include "render.h"
 
 #include "modules/lib/osdobj_common.h"
+#include "modules/osdwindow.h"
 
 // OSD headers
 #include "video.h"
 #include "myosd.h"
+#include "myosd_netplay.h"
 
-
-#include <android/log.h>
+#include "myosd_platform.h"
+#include <cstring>
 
 #define MIN(a,b) ((a)<(b) ? (a) : (b))
 #define MAX(a,b) ((a)<(b) ? (b) : (a))
@@ -49,53 +53,6 @@ int myosd_display_width_osd;
 int myosd_display_height_osd;
 int myosd_bitmap_filtering;
 int myosd_vector_improved;
-extern int myosd_fps;
-extern int myosd_zoom_to_window;
-
-//============================================================
-//  OPTIONS
-//============================================================
-
-
-static const options_entry s_option_entries[] =
-{
-    //  { OPTION_INIPATH,       INI_PATH,   OPTION_STRING,     "path to ini files" },
-
-    // MYOSD options
-    { nullptr,              nullptr,    core_options::option_type::HEADER,      "MYOSD OPTIONS" },
-    { OPTION_VIDEO,         "myosd",    core_options::option_type::STRING,      "video output method: none,myosd" },
-    { OPTION_SOUND,         "myosd",      core_options::option_type::STRING,      "sound output method: none,myosd" },
-    { OSDOPTION_NUMSCREENS "(1-1)",              "1",              core_options::option_type::INTEGER,   "Does nothing in MAME4droid" },
-    { OSDOPTION_GL_GLSL,                         "0",              core_options::option_type::BOOLEAN,   "Does nothing in MAME4droid" },
-    { OSDOPTION_FILTER ";glfilter;flt",          "1",              core_options::option_type::BOOLEAN,   "Does nothing in MAME4droid" },
-    { OSDOPTION_PRESCALE "(1-1)",               "1",              core_options::option_type::INTEGER,   "Does nothing in MAME4droid" },
-    { OSDOPTION_WINDOW ";w",                     "0",              core_options::option_type::BOOLEAN,   "Does nothing in MAME4droid" },
-    { OPTION_KEEPASPECT ";ka",                           "1",         core_options::option_type::BOOLEAN,    "Does nothing in MAME4droid" },
-    { OSDOPTION_MAXIMIZE ";max",                 "1",              core_options::option_type::BOOLEAN,   "Does nothing in MAME4droid" },
-    { OSDOPTION_WAITVSYNC ";vs",                 "0",              core_options::option_type::BOOLEAN,   "Does nothing in MAME4droid" },
-    { OSDOPTION_SYNCREFRESH ";srf",              "0",              core_options::option_type::BOOLEAN,   "Does nothing in MAME4droid" },
-
-    { OPTION_PADDLE_DEVICE ";paddle",                    "none",  core_options::option_type::STRING,     "Does nothing in MAME4droid" },
-    { OPTION_ADSTICK_DEVICE ";adstick",                  "none",  core_options::option_type::STRING,     "Does nothing in MAME4droid" },
-    { OPTION_PEDAL_DEVICE ";pedal",                      "none",  core_options::option_type::STRING,     "Does nothing in MAME4droid" },
-    { OPTION_DIAL_DEVICE ";dial",                        "none",  core_options::option_type::STRING,     "Does nothing in MAME4droid" },
-    { OPTION_TRACKBALL_DEVICE ";trackball",              "none",  core_options::option_type::STRING,     "Does nothing in MAME4droid" },
-    { OPTION_LIGHTGUN_DEVICE,                            "none",  core_options::option_type::STRING,     "Does nothing in MAME4droid" },
-    { OPTION_POSITIONAL_DEVICE,                          "none",  core_options::option_type::STRING,     "Does nothing in MAME4droid" },
-    { OPTION_MOUSE_DEVICE,                               "none",     core_options::option_type::STRING,     "Does nothing in MAME4droid" },
-
-    { KEYBOARDINPUT_PROVIDER,                OSDOPTVAL_AUTO,   core_options::option_type::STRING,    "provider for keyboard input: " },
-    { MOUSEINPUT_PROVIDER,                   OSDOPTVAL_AUTO,   core_options::option_type::STRING,    "provider for mouse input: " },
-    { LIGHTGUNINPUT_PROVIDER,                OSDOPTVAL_AUTO,   core_options::option_type::STRING,    "provider for lightgun input: " },
-    { JOYSTICKINPUT_PROVIDER,                OSDOPTVAL_AUTO,   core_options::option_type::STRING,    "provider for joystick input: " },
-
-    { OPTION_HISCORE,       "0",        core_options::option_type::BOOLEAN,     "enable hiscore system" },
-    { OPTION_BEAM,          "1.0",      core_options::option_type::FLOAT,       "set vector beam width maximum" },
-    { OPTION_BENCH,         "0",        core_options::option_type::INTEGER,     "benchmark for the given number of emulated seconds" },
-    { OPTION_NUMPROCESSORS, "auto",     core_options::option_type::STRING,      "number of processors; this overrides the number the system reports" },
-
-    { nullptr }
-};
 
 //============================================================
 //  myosd_main
@@ -117,11 +74,11 @@ extern "C" int myosd_main(int argc, char** argv, myosd_callbacks* callbacks, siz
 
     std::vector<std::string> args = osd_get_command_line(argc, argv);
 
-    // tons of code in MAME does a unsafe downcast from emu_options to osd_options, be carefull
-    // ...(we need to to have video, and sound in options entries)
-    emu_options options;
-    options.add_entries(s_option_entries);
+    // SDL/Windows-style startup: typed options + register_options so the
+    // module manager knows the myosd/droid providers (myosdopts.cpp)
+    myosd_options options;
     osdInterface = new my_osd_interface(options, host_callbacks);
+    osdInterface->register_options();
     int res = emulator_info::start_frontend(options, *osdInterface, args);
     delete osdInterface;
     osdInterface = nullptr;
@@ -155,7 +112,7 @@ extern "C" void myosd_speed_hack()
                 cpu_device *firstcpu = downcast<cpu_device *>(&device);
 
                 std::string name = std::string(firstcpu->name());
-                __android_log_print(ANDROID_LOG_DEBUG, "hacks", "hacking %s", name.c_str());
+                MYOSD_PLATFORM_LOG("hacks", "hacking %s", name.c_str());
                 if (name.find("R4600") != std::string::npos || name.find("TMS34010") != std::string::npos) {
                     cpu_overclock = 60;
                 }
@@ -169,7 +126,7 @@ extern "C" void myosd_speed_hack()
                     cpu_overclock = 90;
                 }
                 firstcpu->set_clock_scale((float) cpu_overclock * 0.01f);
-                __android_log_print(ANDROID_LOG_DEBUG, "hacks", "hacked to %d", cpu_overclock);
+                MYOSD_PLATFORM_LOG("hacks", "hacked to %d", cpu_overclock);
                 break;
             }
         }
@@ -181,118 +138,160 @@ extern "C" void myosd_speed_hack()
 //============================================================
 extern "C" void myosd_pushEvent(myosd_inputevent event)
 {
+    /* Click tracking: clicks stay positive while the
+     * press can still be a click/tap and are NEGATED once it becomes a
+     * hold or drag (>250ms or moved too far). The UI relies on this:
+     * exactly 1 activates arrows, 2 activates items, <0 means drag. */
     static unsigned buttons = 0;
+    static bool touch_down = false;
+    static int mouse_clicks = 0, touch_clicks = 0;
+    static int mouse_px = 0, mouse_py = 0, touch_px = 0, touch_py = 0;
+    static std::chrono::steady_clock::time_point mouse_t0, touch_t0;
 
     if(osdInterface!= nullptr && osdInterface->isMachine() && osdInterface->target()!= nullptr) {
 
+        /* CLICK/TAP_DISTANCE are squared desktop pixels;
+         * scale them to the current target size (~240p = 1x). */
+        int const th = osdInterface->target()->height();
+        int const unit = MAX(1, (th > 0 ? th : 480) / 240);
+        int const click_dist = 16 * unit * unit;
+        int const tap_dist = 49 * unit * unit;
+        auto const now = std::chrono::steady_clock::now();
+        auto const hold_time = std::chrono::milliseconds(250);
+
+        // negate the click count once the press stops being a click/tap
+        auto check_hold_drag = [&](int &clicks, int px, int py, int maxdist,
+                std::chrono::steady_clock::time_point t0) {
+            if (0 < clicks) {
+                int const dx = event.data.pointer_data.x - px;
+                int const dy = event.data.pointer_data.y - py;
+                if (((t0 + hold_time) < now) || (maxdist < ((dx * dx) + (dy * dy))))
+                    clicks = -clicks;
+            }
+        };
+
         switch(event.type) {
             case event.MYOSD_KEY_EVENT:
-                osdInterface->machine().ui_input().push_char_event(osdInterface->target(), event.data.key_char);
+                osdInterface->target()->push_char_event(event.data.key_char);
                 break;
             case event.MYOSD_MOUSE_MOVE_EVENT:
             {
-                osdInterface->machine().ui_input().push_pointer_update(
-                        osdInterface->target(),
+                if (buttons & 1)
+                    check_hold_drag(mouse_clicks, mouse_px, mouse_py, click_dist, mouse_t0);
+                osdInterface->target()->push_pointer_update(
                         osd::ui_event_handler::pointer::MOUSE,
                         0,
                         1,
                         event.data.pointer_data.x, event.data.pointer_data.y,
-                        buttons, 0, 0, 0);
+                        buttons, 0, 0, mouse_clicks);
                 break;
             }
             case event.MYOSD_MOUSE_BT1_DOWN:
             {
                 unsigned pressed = (1) << 0;
                 buttons |= pressed;
-                osdInterface->machine().ui_input().push_pointer_update(
-                        osdInterface->target(),
+                mouse_clicks = event.data.pointer_data.double_action ? 2 : 1;
+                mouse_px = event.data.pointer_data.x;
+                mouse_py = event.data.pointer_data.y;
+                mouse_t0 = now;
+                osdInterface->target()->push_pointer_update(
                         osd::ui_event_handler::pointer::MOUSE,
                         0,
                         1,
                         event.data.pointer_data.x, event.data.pointer_data.y,
-                        buttons, pressed, 0, event.data.pointer_data.double_action ? 2 : 1);
+                        buttons, pressed, 0, mouse_clicks);
                 break;
             }
             case event.MYOSD_MOUSE_BT1_UP:
             {
                 unsigned released = (1) << 0;
                 buttons &= ~released;
-                osdInterface->machine().ui_input().push_pointer_update(
-                        osdInterface->target(),
+                check_hold_drag(mouse_clicks, mouse_px, mouse_py, click_dist, mouse_t0);
+                osdInterface->target()->push_pointer_update(
                         osd::ui_event_handler::pointer::MOUSE,
                         0,
                         1,
                         event.data.pointer_data.x, event.data.pointer_data.y,
-                        buttons, 0, released, event.data.pointer_data.double_action ? 2 : 1);
+                        buttons, 0, released, mouse_clicks);
                 break;
             }
             case event.MYOSD_MOUSE_BT2_DOWN: {
                 unsigned pressed = (1) << 1;
                 buttons |= pressed;
-                osdInterface->machine().ui_input().push_pointer_update(
-                        osdInterface->target(),
+                osdInterface->target()->push_pointer_update(
                         osd::ui_event_handler::pointer::MOUSE,
                         0,
                         1,
                         event.data.pointer_data.x, event.data.pointer_data.y,
-                        buttons, pressed, 0, 1);
+                        buttons, pressed, 0, mouse_clicks);
 
                 break;
             }
             case event.MYOSD_MOUSE_BT2_UP: {
                 unsigned released = (1) << 1;
                 buttons &= ~released;
-                osdInterface->machine().ui_input().push_pointer_update(
-                        osdInterface->target(),
+                osdInterface->target()->push_pointer_update(
                         osd::ui_event_handler::pointer::MOUSE,
                         0,
                         1,
                         event.data.pointer_data.x, event.data.pointer_data.y,
-                        buttons, 0, released, 1);
+                        buttons, 0, released, mouse_clicks);
 
                 break;
             }
             case event.MYOSD_FINGER_MOVE:
             {
-                osdInterface->machine().ui_input().push_pointer_update(
-                        osdInterface->target(),
+                // Java can emit MOVE before DOWN when it anchors a finger
+                // (or when one slides off a virtual control): drop those
+                if (!touch_down)
+                    break;
+                check_hold_drag(touch_clicks, touch_px, touch_py, tap_dist, touch_t0);
+                osdInterface->target()->push_pointer_update(
                         osd::ui_event_handler::pointer::TOUCH,
                         1,
                         1,
                         event.data.pointer_data.x, event.data.pointer_data.y,
-                        1, 0, 0, event.data.pointer_data.double_action ? 2 : 1);
+                        1, 0, 0, touch_clicks);
                 break;
             }
             case event.MYOSD_FINGER_DOWN:
             {
-                osdInterface->machine().ui_input().push_pointer_update(
-                        osdInterface->target(),
+                if (touch_down)
+                    break;
+                touch_down = true;
+                touch_clicks = event.data.pointer_data.double_action ? 2 : 1;
+                touch_px = event.data.pointer_data.x;
+                touch_py = event.data.pointer_data.y;
+                touch_t0 = now;
+                osdInterface->target()->push_pointer_update(
                         osd::ui_event_handler::pointer::TOUCH,
                         1,
                         1,
                         event.data.pointer_data.x, event.data.pointer_data.y,
-                        1, 1, 0, event.data.pointer_data.double_action ? 2 : 1);
+                        1, 1, 0, touch_clicks);
 
                 break;
             }
             case event.MYOSD_FINGER_UP:
             {
-                osdInterface->machine().ui_input().push_pointer_update(
-                        osdInterface->target(),
+                if (!touch_down)
+                    break;
+                touch_down = false;
+                check_hold_drag(touch_clicks, touch_px, touch_py, tap_dist, touch_t0);
+                osdInterface->target()->push_pointer_update(
                         osd::ui_event_handler::pointer::TOUCH,
                         1,
                         1,
                         event.data.pointer_data.x, event.data.pointer_data.y,
-                        0, 0, 1, event.data.pointer_data.double_action ? 2 : -1);
-/*
-                osdInterface->machine().ui_input().push_pointer_leave(
-                        osdInterface->target(),
+                        0, 0, 1, touch_clicks);
+                /* the finger is gone: release first (update), then leave with
+                 * released=0 or menu.cpp asserts released == its button state */
+                osdInterface->target()->push_pointer_leave(
                         osd::ui_event_handler::pointer::TOUCH,
                         1,
                         1,
                         event.data.pointer_data.x, event.data.pointer_data.y,
-                        0, event.data.pointer_data.double_action ? 2 : 1);
-*/
+                        0, touch_clicks);
                 break;
             }
             default:
@@ -374,10 +373,11 @@ extern "C" void myosd_set(int var, intptr_t value)
 //  constructor
 //============================================================
 
-my_osd_interface::my_osd_interface(emu_options &options, myosd_callbacks &callbacks)
-: m_machine(nullptr),m_options(options), m_verbose(false), m_target(nullptr), m_callbacks(callbacks)
+my_osd_interface::my_osd_interface(myosd_options &options, myosd_callbacks &callbacks)
+: osd_common_t(options), m_machine(nullptr), m_options(options),
+  m_video_none(0), m_sample_rate(0), m_callbacks(callbacks)
 {
-    osd_output::push(this);
+    // osd_common_t already did osd_output::push(this)
 
     if (m_callbacks.output_init != NULL)
         m_callbacks.output_init();
@@ -393,7 +393,7 @@ my_osd_interface::~my_osd_interface()
     if (m_callbacks.output_exit != NULL)
         m_callbacks.output_exit();
 
-    osd_output::pop(this);
+    // osd_common_t does osd_output::pop(this)
 }
 
 //-------------------------------------------------
@@ -402,7 +402,7 @@ my_osd_interface::~my_osd_interface()
 
 void my_osd_interface::output_callback(osd_output_channel channel, const util::format_argument_pack<char> &args)
 {
-    if (channel == OSD_OUTPUT_CHANNEL_VERBOSE && !m_verbose)
+    if (channel == OSD_OUTPUT_CHANNEL_VERBOSE && !verbose())
         return;
 
     std::ostringstream buffer;
@@ -724,35 +724,36 @@ void my_osd_interface::init(running_machine &machine)
     // This callback is also the last opportunity to adjust the options
     // before they are consumed by the rest of the core.
     //
+    // shadow the machine pointer: isMachine() keeps its legacy semantics
     m_machine = &machine;
 
-    // ensure we get called on the way out
-    machine.add_notifier(MACHINE_NOTIFY_EXIT, machine_notify_delegate(&my_osd_interface::machine_exit, this));
+    // base: stores machine, registers the EXIT notifier (-> our osd_exit),
+    // reads -verbose and sets up the optional watchdog
+    osd_common_t::init(machine);
 
-    auto &options = machine.options();
-
-    // extract the verbose printing option
-    if (options.verbose() || DebugLog > 1)
+    if (DebugLog > 1)
         set_verbose(true);
 
+    auto &options = this->options();
+
     // determine if we are benchmarking, and adjust options appropriately
-    int bench = options.int_value(OPTION_BENCH);
+    int bench = options.bench();
     if (bench > 0)
     {
         options.set_value(OPTION_THROTTLE, false, OPTION_PRIORITY_MAXIMUM);
-        options.set_value(OPTION_SOUND, "none", OPTION_PRIORITY_MAXIMUM);
-        options.set_value(OPTION_VIDEO, "none", OPTION_PRIORITY_MAXIMUM);
+        options.set_value(OSDOPTION_SOUND, "none", OPTION_PRIORITY_MAXIMUM);
+        options.set_value(OSDOPTION_VIDEO, "none", OPTION_PRIORITY_MAXIMUM);
         options.set_value(OPTION_SECONDS_TO_RUN, bench, OPTION_PRIORITY_MAXIMUM);
     }
 
     // check for HISCORE
-    if (options.bool_value(OPTION_HISCORE))
+    if (options.hiscore())
     {
         // ...NOTE hiscores are handled via plugins
     }
 
     // check for OPTION_BEAM and map to OPTION_BEAM_WIDTH_MIN and MAX
-    float beam = options.float_value(OPTION_BEAM);
+    float beam = options.beam();
     if (beam != 1.0)
     {
         options.set_value(OPTION_BEAM_WIDTH_MIN, beam, OPTION_PRIORITY_CMDLINE);
@@ -760,7 +761,7 @@ void my_osd_interface::init(running_machine &machine)
     }
 
     /* get number of processors */
-    const char *nump = options.value(OPTION_NUMPROCESSORS);
+    const char *nump = options.numprocessors();
 
     osd_num_processors = 0; // 0 is Auto
 
@@ -774,9 +775,17 @@ void my_osd_interface::init(running_machine &machine)
         }
     }
 
-    video_init();
-    input_init();
-    sound_init();
+    // audio: 0 means silent, the legacy contract kept by no_sound()
+    m_sample_rate = options.sample_rate();
+    if (strcmp(options.sound(), "none") == 0)
+        m_sample_rate = 0;
+
+    // clear input state so the profile lazy-init in input_update() runs
+    memset(&g_input, 0, sizeof(g_input));
+
+    // select and start all the modules: monitor, render (video_init),
+    // input, font, sound, debugger, midi, netdev and output
+    init_subsystems();
 
     bool in_game = (&m_machine->system() != &GAME_NAME(___empty));
 
@@ -794,28 +803,53 @@ void my_osd_interface::init(running_machine &machine)
 }
 
 //============================================================
-//  machine_exit
+//  osd_exit (MACHINE_NOTIFY_EXIT, registered by osd_common_t::init)
 //============================================================
 
-void my_osd_interface::machine_exit()
+void my_osd_interface::osd_exit()
 {
     bool in_game = (&m_machine->system() != &GAME_NAME(___empty));
 
     if (m_callbacks.game_exit != NULL && in_game)
         m_callbacks.game_exit();
 
-    video_exit();
-    input_exit();
-    sound_exit();
+    // legacy host-visible teardown order: renderer/target first, then
+    // the video/input/sound exit callbacks, then the module manager
+    window_exit();
+
+    if (m_callbacks.video_exit != nullptr)
+        m_callbacks.video_exit();
+
+    if (m_callbacks.input_exit != nullptr)
+        m_callbacks.input_exit();
+
+    if (m_sample_rate != 0 && m_callbacks.sound_exit != NULL)
+        m_callbacks.sound_exit();
+
+    osd_common_t::osd_exit();
+
+    /* Rollback cleanup: free all captured ram_states and reset flags.    */
+    myosd_netplay_state_cleanup();
+    myosd_netplay_set_ff_active(0);
+    myosd_netplay_set_audio_mute(0);
 }
 
 //============================================================
-//  osd_setup_osd_specific_emu_options
+//  target - the single window's render target (nullable
+//  between sessions, myosd_pushEvent relies on that)
 //============================================================
 
-void osd_setup_osd_specific_emu_options(emu_options &opts)
+render_target *my_osd_interface::target() const
 {
-    opts.add_entries(s_option_entries);
+    return s_window_list.empty() ? nullptr : s_window_list.front()->target();
 }
 
+//============================================================
+//  no_sound - legacy contract: rate 0 (or -sound none) is silent
+//============================================================
+
+bool my_osd_interface::no_sound()
+{
+    return m_sample_rate == 0;
+}
 
