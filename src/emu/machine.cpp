@@ -45,6 +45,9 @@
 #include <emscripten.h>
 #endif
 
+// DAV HACK
+#include "../osd/myosd/netplay.h"
+// END DAV HACK
 
 
 //**************************************************************************
@@ -168,6 +171,14 @@ void running_machine::start()
 
 	// initialize the base time (needed for doing record/playback)
 	::time(&m_base_time);
+
+// DAV HACK
+	netplay_t* handle = netplay_get_handle();
+	if (handle && handle->has_connection)
+	{
+		m_base_time = handle->basetime;
+	}
+// END DAV HACK
 
 	// initialize the input system and input ports for the game
 	// this must be done before memory_init in order to allow specifying
@@ -327,7 +338,6 @@ void running_machine::start()
 
 	manager().update_machine();
 }
-
 
 //-------------------------------------------------
 //  run - execute the machine
