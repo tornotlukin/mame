@@ -665,6 +665,7 @@ public:
 	void cps2comm(machine_config &config) ATTR_COLD;
 	void cps2_4p_43(machine_config &config) ATTR_COLD; // 4-player, STOCK 4:3 (2v2 variants; NO widescreen)
 	void cps2_4p_duo(machine_config &config) ATTR_COLD; // 4-player 4-live DUO + widescreen (mvscduo standalone)
+	void cps2x(machine_config &config) ATTR_COLD; // CPS-2X expanded board (mvscextra): stock game + expansion chips
 	void gigaman2(machine_config &config) ATTR_COLD;
 	void dead_cps2(machine_config &config) ATTR_COLD;
 	void dead_cps2comm(machine_config &config) ATTR_COLD;
@@ -681,6 +682,7 @@ public:
 	void init_mshvsf_4p() ATTR_COLD;
 	void init_mvsc2v2_4p() ATTR_COLD;
 	void init_mvscduo() ATTR_COLD;
+	void init_mvscextra() ATTR_COLD;
 
 protected:
 	virtual void machine_start() override ATTR_COLD;
@@ -723,6 +725,13 @@ private:
 	void dead_cps2_comm_map(address_map &map) ATTR_COLD;
 	void dead_cps2_map(address_map &map) ATTR_COLD;
 	void decrypted_opcodes_map(address_map &map) ATTR_COLD;
+
+	// CPS-2X expanded board (mvscextra). See the block comment above cps2x_map.
+	void cps2x_map(address_map &map) ATTR_COLD;
+	void cps2x_opcodes_map(address_map &map) ATTR_COLD;
+	// Object tile codes gain bit 18 from object-record y bit 15 (64MB sprite space). Set by
+	// init_mvscextra only; stock sets never see the extra term.
+	bool m_cps2x_ext_obj = false;
 
 	// 4-player 2v2 tag mod (VS trilogy). See the block comment above cps2_4p_in0_r.
 	void cps2_4p_map(address_map &map) ATTR_COLD;
@@ -927,7 +936,9 @@ void cps2_state::cps2_render_sprites(screen_device &screen, bitmap_ind16 &bitmap
 		int x = base[i + 0];
 		int y = base[i + 1];
 		const int priority = (x >> 13) & 0x07;
-		const int code = base[i + 2] + ((y & 0x6000) << 3);
+		// CPS-2X (mvscextra): object-record y bit 15 extends the tile code to bit 18, doubling the
+		// addressable sprite space to 64MB. Stock boards leave the flag false and behave bit-identically.
+		const int code = base[i + 2] + ((y & 0x6000) << 3) + (m_cps2x_ext_obj ? ((y & 0x8000) << 3) : 0);
 		const int colour = base[i + 3];
 		const int col = colour & 0x1f;
 		const bool flipx = BIT(colour, 5);
@@ -1343,6 +1354,22 @@ void cps2_state::cps2_map(address_map &map)
 	map(0xff0000, 0xffffff).ram();                                                                                                    // RAM
 }
 
+// --- CPS-2X expanded board (mvscextra) ---
+// A fictional expanded B-board for the roster-expansion project: the stock CPS2 map plus an
+// EXPANSION ROM "chip" mapped into the big unmapped hole at 0x930000-0xD2FFFF (4MB; the hole
+// extends to 0xFEFFFF if more is ever needed). The chip holds transplanted character data and
+// new code. It sits OUTSIDE the encryption range, so its contents are plaintext -- and it is
+// also mapped into the opcodes space below, so new 68k code placed there executes as-is with
+// no encode step. Capcom's own map reserved 0x660000-0x663FFF as "addon memory"; this extends
+// the same idea. Stock sets never reference these addresses, so the mapping is inert for them.
+void cps2_state::cps2x_map(address_map &map)
+{
+	// Built on the 4-player map: the CPS-2X board carries the P3/P4 mod, with the "Play Mode"
+	// selector (cps2_4p6b_mode) choosing stock 1v1/2P (mux inert) or 2v2/4P at the input layer.
+	cps2_4p_map(map);
+	map(0x930000, 0xd2ffff).rom().region("expansion", 0);                                                                             // CPS-2X expansion chip
+}
+
 // --- 4-player 2v2 tag mod (xmvsf) ---
 // Teams P1+P3 vs P2+P4. Each team shows one "point" character at a time. Ownership follows the
 // CHARACTER, not the slot: P1/P2 own the STARTING (first-selected) character; P3/P4 own the
@@ -1552,6 +1579,12 @@ void cps2_state::cps2_comm_map(address_map &map)
 void cps2_state::decrypted_opcodes_map(address_map &map)
 {
 	map(0x000000, 0x3fffff).rom().share(m_decrypted_opcodes); // 68000 ROM
+}
+
+void cps2_state::cps2x_opcodes_map(address_map &map)
+{
+	decrypted_opcodes_map(map);
+	map(0x930000, 0xd2ffff).rom().region("expansion", 0);     // CPS-2X expansion chip: executable, unencrypted
 }
 
 void cps2_state::dead_cps2_map(address_map &map)
@@ -2167,6 +2200,18 @@ void cps2_state::cps2_4p_duo(machine_config &config)
 	m_screen->set_raw(CPS_PIXEL_CLOCK, CPS_HTOTAL, 0, CPS_HTOTAL, CPS_VTOTAL, CPS_VBEND, CPS_VBSTART);
 	// Present at 16:9 so pixels keep their stock shape: 512/384 x (4:3) = 16:9.
 	m_screen->set_physical_aspect(16, 9);
+}
+
+void cps2_state::cps2x(machine_config &config)
+{
+	cps2(config);
+	// CPS-2X expanded board (mvscextra): STOCK game rules on the stock 4:3 raster, carrying the
+	// 4-player mod with the "Play Mode" input selector -- 1v1 (mux inert, bit-stock 2P) or 2v2
+	// (proven 4P tag mux, mvsc gates). The other hardware delta is storage: expansion ROM at
+	// 0x930000 (program + opcodes space, plaintext), a 64MB gfx region (object tile-code bit 18
+	// via y[15], see cps2_render_sprites and init_mvscextra), and a 16MB QSound sample region.
+	m_maincpu->set_addrmap(AS_PROGRAM, &cps2_state::cps2x_map);
+	m_maincpu->set_addrmap(AS_OPCODES, &cps2_state::cps2x_opcodes_map);
 }
 
 void cps2_state::cps2comm(machine_config &config)
@@ -6215,6 +6260,49 @@ ROM_START( mvscduo )
 	ROM_LOAD( "mvc.02",   0x28000, 0x20000, CRC(963abf6b) SHA1(6b784870e338701cefabbbe4669984b5c4e8a9a5) )
 
 	ROM_REGION( 0x800000, "qsound", 0 ) // QSound samples
+	ROM_LOAD16_WORD_SWAP( "mvc.11m",   0x000000, 0x400000, CRC(850fe663) SHA1(81e519d05a08855f242ea2e17ee0859b449db895) )
+	ROM_LOAD16_WORD_SWAP( "mvc.12m",   0x400000, 0x400000, CRC(7ccb1896) SHA1(74caadf3282fcc6acffb1bbe3734106f81124121) )
+
+	ROM_REGION( 0x20, "key", 0 )
+	ROM_LOAD( "mvsc.key",     0x000000, 0x000014, CRC(7e101e09) SHA1(9d725a7c6bbc20e46f749eaec4bab15b0195077a) )
+ROM_END
+
+// mvscextra: mvsc EURO base on the CPS-2X expanded board (roster-expansion project; see
+// workshop-vs-characters.md in the project repo). Skeleton stage: the base game is BIT-STOCK
+// (stock rules, stock 4:3, stock 2P) and every expansion region boots EMPTY -- "expansion"
+// (68k data/code chip @0x930000), the upper 32MB of "gfx" (object banks 4-7 via tile-code
+// bit 18 = object y[15]), and the upper 8MB of "qsound" (sample banks 0x80+). Transplanted
+// character chips (Cyclops first, from mshvsf) get ROM_LOADed into these regions as they are
+// excised; until then the set must boot and play identically to stock mvsc.
+ROM_START( mvscextra )
+	ROM_REGION( CODE_SIZE, "maincpu", 0 ) // 68000 code
+	ROM_LOAD16_WORD_SWAP( "mvce.03a", 0x000000, 0x80000, CRC(824e4a90) SHA1(5c79c166d988d8a75d9941f4ee6fa4d6476e55e1) )
+	ROM_LOAD16_WORD_SWAP( "mvce.04a", 0x080000, 0x80000, CRC(436c5a4e) SHA1(82f4586e888f2550c53bfdc93a53791a595e05bd) )
+	ROM_LOAD16_WORD_SWAP( "mvc.05a",  0x100000, 0x80000, CRC(2d8c8e86) SHA1(b07d640a734c5d336054ed05195786224c9a6cd4) )
+	ROM_LOAD16_WORD_SWAP( "mvc.06a",  0x180000, 0x80000, CRC(8528e1f5) SHA1(cd065c05268ab581b05676da544baf6af642acac) )
+	ROM_LOAD16_WORD_SWAP( "mvc.07",   0x200000, 0x80000, CRC(c3baa32b) SHA1(d35589847e0753e869ffcd7c3abed925bfdb0fa2) )
+	ROM_LOAD16_WORD_SWAP( "mvc.08",   0x280000, 0x80000, CRC(bc002fcd) SHA1(0b6735a071a9274f7ab25c743271fc30411fe819) )
+	ROM_LOAD16_WORD_SWAP( "mvc.09",   0x300000, 0x80000, CRC(c67b26df) SHA1(6e9969246c57269d7ba0992a5cc319c8910bf8a9) )
+	ROM_LOAD16_WORD_SWAP( "mvc.10",   0x380000, 0x80000, CRC(0fdd1e26) SHA1(5fa684d823b4f4eec61ed9e9b8938af5272ae1ed) )
+
+	ROM_REGION( 0x400000, "expansion", ROMREGION_ERASEFF ) // CPS-2X 68k expansion chip @0x930000 (plaintext; empty until transplants land)
+
+	ROM_REGION( 0x4000000, "gfx", ROMREGION_ERASEFF ) // 64MB: stock 32MB + CPS-2X banks 4-7 (empty until transplants land)
+	ROM_LOAD64_WORD( "mvc.13m",   0x0000000, 0x400000, CRC(fa5f74bc) SHA1(79a619248938a85ce4f7794a704647b9cf564fbc) )
+	ROM_LOAD64_WORD( "mvc.15m",   0x0000002, 0x400000, CRC(71938a8f) SHA1(6982f7203458c1c46a1c1c13c0d0f2a5e109d271) )
+	ROM_LOAD64_WORD( "mvc.17m",   0x0000004, 0x400000, CRC(92741d07) SHA1(ddfd70eab7c983ab452194b1860059f8ad694459) )
+	ROM_LOAD64_WORD( "mvc.19m",   0x0000006, 0x400000, CRC(bcb72fc6) SHA1(46ab98dcdf6f5d611646a22a7355939ef5b2bbe5) )
+	ROM_LOAD64_WORD( "mvc.14m",   0x1000000, 0x400000, CRC(7f1df4e4) SHA1(ede92b31c1fe87f91b4fe74ac211f2fb5f863bc2) )
+	ROM_LOAD64_WORD( "mvc.16m",   0x1000002, 0x400000, CRC(90bd3203) SHA1(ed83208c486ea0f407b7e5d16a8cf242a6f73774) )
+	ROM_LOAD64_WORD( "mvc.18m",   0x1000004, 0x400000, CRC(67aaf727) SHA1(e0e69104e31d2c41e18c0d24e9ab962406a7ca9a) )
+	ROM_LOAD64_WORD( "mvc.20m",   0x1000006, 0x400000, CRC(8b0bade8) SHA1(c5732361bb4bf284c4d12a82ac2c5750b1f9d441) )
+
+	ROM_REGION( QSOUND_SIZE, "audiocpu", 0 ) // 64k for the audio CPU (+banks)
+	ROM_LOAD( "mvc.01",   0x00000, 0x08000, CRC(41629e95) SHA1(36925c05b5fdcbe43283a882d021e5360c947061) )
+	ROM_CONTINUE(         0x10000, 0x18000 )
+	ROM_LOAD( "mvc.02",   0x28000, 0x20000, CRC(963abf6b) SHA1(6b784870e338701cefabbbe4669984b5c4e8a9a5) )
+
+	ROM_REGION( 0x1000000, "qsound", ROMREGION_ERASEFF ) // 16MB: stock 8MB + CPS-2X sample banks 0x80+ (empty until transplants land)
 	ROM_LOAD16_WORD_SWAP( "mvc.11m",   0x000000, 0x400000, CRC(850fe663) SHA1(81e519d05a08855f242ea2e17ee0859b449db895) )
 	ROM_LOAD16_WORD_SWAP( "mvc.12m",   0x400000, 0x400000, CRC(7ccb1896) SHA1(74caadf3282fcc6acffb1bbe3734106f81124121) )
 
@@ -11496,6 +11584,17 @@ void cps2_state::init_mvsc2v2_4p() { init_vs4p(0xff3800, 0xff3c00); }
 // with the gate unset, cps2_4p_in0_r/in1_r/in2_r pass P1/P2 through unchanged. Just do the crypto.
 void cps2_state::init_mvscduo() { init_cps2(); }
 
+// CPS-2X (mvscextra): mvsc's proven 2v2 gates (partner-slot on-field flags, same RAM layout as
+// stock mvsc) plus the extended-object flag. The flag is what lets the renderer read tile-code
+// bit 18 from object-record y[15]; the GAME-side bank table (0x24C7E family) and per-character
+// bank bytes (+0x47) decide who actually emits it. With "Play Mode" at 1v1 the 4P mux is inert
+// and the set behaves bit-stock.
+void cps2_state::init_mvscextra()
+{
+	init_vs4p(0xff3800, 0xff3c00);
+	m_cps2x_ext_obj = true;
+}
+
 void cps2_state::init_cps2nc()
 {
 	// Initialize some video elements
@@ -13349,6 +13448,7 @@ GAME( 1998, mvsc2v2,    mvsc,     cps2_4p_43, cps2_4p6b_mode2v2, cps2_state, ini
 // always. Uses the insulated cps2_4p6b_duo ports (no "Play Mode" entry, since there is no 1v1 to
 // switch to) and routes P3/P4 from its own program ROM rather than the driver mux.
 GAME( 1998, mvscduo,    mvsc,     cps2_4p_duo, cps2_4p6b_duo, cps2_state, init_mvscduo, ROT0,  "TORNOTLUKIN", "Marvel Vs. Capcom: Clash of Super Heroes Duo (widescreen)",               MACHINE_SUPPORTS_SAVE )
+GAME( 1998, mvscextra,  mvsc,     cps2x,      cps2_4p6b_mode, cps2_state, init_mvscextra, ROT0, "TORNOTLUKIN", "Marvel Vs. Capcom: Clash of Super Heroes Extra (CPS-2X expanded roster)", MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscur1,    mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (USA 971222)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscj,      mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Japan 980123)",                       MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscjr1,    mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Japan 980112)",                       MACHINE_SUPPORTS_SAVE )
