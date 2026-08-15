@@ -879,7 +879,15 @@ void cps2_state::find_last_sprite()    /* Find the offset of last sprite */
 	/* Locate the end of table marker */
 	while (offset < m_cps2_obj_size / 2)
 	{
-		if (base[offset + 1] >= 0x8000 || base[offset + 3] >= 0xff00)
+		// CPS-2X (mvscextra): object y bit15 doubles as tile-code bit 18, so "y >= 0x8000"
+		// would treat every bank-4+ sprite piece as the end-of-list marker (symptom: the
+		// transplanted character is invisible and anything sorted after him vanishes). The
+		// game's real marker is a record of all-0x8000 words, so require x AND y to match
+		// exactly. Stock sets keep the original permissive test.
+		const bool marker = m_cps2x_ext_obj
+				? ((base[offset] == 0x8000 && base[offset + 1] == 0x8000) || base[offset + 3] >= 0xff00)
+				: (base[offset + 1] >= 0x8000 || base[offset + 3] >= 0xff00);
+		if (marker)
 		{
 			/* Marker found. This is the last sprite. */
 			m_cps2_last_sprite_offset = offset - 4;
