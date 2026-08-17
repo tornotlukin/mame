@@ -1363,19 +1363,43 @@ void cps2_state::cps2_map(address_map &map)
 }
 
 // --- CPS-2X expanded board (mvscextra) ---
-// A fictional expanded B-board for the roster-expansion project: the stock CPS2 map plus an
-// EXPANSION ROM "chip" mapped into the big unmapped hole at 0x930000-0xD2FFFF (4MB; the hole
-// extends to 0xFEFFFF if more is ever needed). The chip holds transplanted character data and
-// new code. It sits OUTSIDE the encryption range, so its contents are plaintext -- and it is
-// also mapped into the opcodes space below, so new 68k code placed there executes as-is with
-// no encode step. Capcom's own map reserved 0x660000-0x663FFF as "addon memory"; this extends
-// the same idea. Stock sets never reference these addresses, so the mapping is inert for them.
+// A fictional expanded B-board for the roster-expansion project: the stock CPS2 map plus TWO
+// ROM "chips" mapped into the big unmapped hole at 0x930000-0xFEFFFF (~6.9MB). Both sit
+// OUTSIDE the encryption range, so their contents are plaintext -- and both are mapped into
+// the opcodes space below, so 68k code placed there executes as-is with no encode step.
+// Capcom's own map reserved 0x660000-0x663FFF as "addon memory"; this extends the same idea.
+// Stock sets never reference these addresses, so the mapping is inert for them.
+//
+// WHOLE-IMAGE MOUNTING (2026-08-17).  The layout changed from one packed chip to a split:
+//
+//   0x930000-0xD2FFFF  "donor"     4MB  a DONOR GAME'S WHOLE PROGRAM IMAGE, verbatim
+//   0xD30000-0xE2FFFF  "expansion" 1MB  the host-side build products (blit lane)
+//
+// The donor chip carries mshvsf's entire 4MB program ROM, loaded with the SAME
+// ROM_LOAD16_WORD_SWAP the maincpu region uses, so its byte order is normalised to the
+// 68k's big-endian view exactly like ':maincpu' (a raw ROM_REGION would have held A^1
+// pair-swapped bytes -- that asymmetry was live-debug bug 1 and it dies here).  Every
+// address inside the donor image therefore translates into mvscextra's map by ONE
+// CONSTANT, +0x930000: donor address A is readable at A + 0x930000, and every sub-block,
+// chain, variant record and stream the donor ever had is present by construction.
+// Rounds 9-21 of the transplant campaign were a running battle with INCOMPLETE EXTRACTION
+// (carry-map sub-blocks left behind, variant records clamped, streams truncated); mounting
+// the image whole makes that entire bug class structurally impossible.
+//
+// The "expansion" chip keeps the old job at a new base: rebuilt charID master tables,
+// trampoline glue, lifted 68k code and synthesized stubs -- everything that does not exist
+// in either original ROM.  It is still ERASEFF and still filled at runtime by the loader
+// probe.  1MB against a payload measured in the low hundreds of KB.
+//
+// Remaining hole: 0xE30000-0xFEFFFF (1.75MB), reserved for the second/third donor mounts
+// (or a chip-select bank register at the donor window when three donors have to coexist).
 void cps2_state::cps2x_map(address_map &map)
 {
 	// Built on the 4-player map: the CPS-2X board carries the P3/P4 mod, with the "Play Mode"
 	// selector (cps2_4p6b_mode) choosing stock 1v1/2P (mux inert) or 2v2/4P at the input layer.
 	cps2_4p_map(map);
-	map(0x930000, 0xd2ffff).rom().region("expansion", 0);                                                                             // CPS-2X expansion chip
+	map(0x930000, 0xd2ffff).rom().region("donor", 0);                                                                                 // CPS-2X donor chip: a whole donor program image, verbatim
+	map(0xd30000, 0xe2ffff).rom().region("expansion", 0);                                                                             // CPS-2X expansion chip: host-side build products
 }
 
 // --- 4-player 2v2 tag mod (xmvsf) ---
@@ -1592,7 +1616,8 @@ void cps2_state::decrypted_opcodes_map(address_map &map)
 void cps2_state::cps2x_opcodes_map(address_map &map)
 {
 	decrypted_opcodes_map(map);
-	map(0x930000, 0xd2ffff).rom().region("expansion", 0);     // CPS-2X expansion chip: executable, unencrypted
+	map(0x930000, 0xd2ffff).rom().region("donor", 0);         // CPS-2X donor chip: executable in place, unencrypted
+	map(0xd30000, 0xe2ffff).rom().region("expansion", 0);     // CPS-2X expansion chip: executable, unencrypted
 }
 
 void cps2_state::dead_cps2_map(address_map &map)
@@ -6276,12 +6301,31 @@ ROM_START( mvscduo )
 ROM_END
 
 // mvscextra: mvsc EURO base on the CPS-2X expanded board (roster-expansion project; see
-// workshop-vs-characters.md in the project repo). Skeleton stage: the base game is BIT-STOCK
-// (stock rules, stock 4:3, stock 2P) and every expansion region boots EMPTY -- "expansion"
-// (68k data/code chip @0x930000), the upper 32MB of "gfx" (object banks 4-7 via tile-code
-// bit 18 = object y[15]), and the upper 8MB of "qsound" (sample banks 0x80+). Transplanted
-// character chips (Cyclops first, from mshvsf) get ROM_LOADed into these regions as they are
-// excised; until then the set must boot and play identically to stock mvsc.
+// workshop-vs-characters.md in the project repo). The base game is BIT-STOCK (stock rules,
+// stock 4:3, stock 2P at the "Play Mode" default) and the extra hardware is STORAGE.
+//
+// WHOLE-IMAGE MOUNTING (2026-08-17).  The donor game rides along IN ITS ENTIRETY, as three
+// verbatim chip mounts, and the host game merely learns to reference it:
+//
+//   "donor"  4MB   mshvsf's whole 68k program image  -> 68k 0x930000-0xD2FFFF
+//                  ROM_LOAD16_WORD_SWAP, i.e. the same normalisation ':maincpu' gets, so
+//                  donor address A reads at A + 0x930000 with plain big-endian words.
+//   "gfx"    upper 32MB   mshvsf's whole object ROM   -> tile codes 0x40000-0x7FFFF
+//                  (CPS-2X banks 4-7, reached by object y[15] = tile-code bit 18).  Same
+//                  8-chip ROM_LOAD64_WORD interleave as stock, so cps2_gfx_decode's
+//                  per-0x200000-bank unshuffle covers it identically.  Donor tile c is
+//                  host tile 0x40000 + c: donor gfx bank N lands on host bank 4+N, which
+//                  is why the per-character +0x47 bank byte maps 0x00->0x10, 0x02->0x14.
+//   "qsound" upper 8MB    mshvsf's whole sample ROM   -> sample banks 0x80-0xFF
+//                  (qsound_device is device_rom_interface<24>, so 16MB needs no device
+//                  change; bank b of the donor is bank b+0x80 here).
+//
+// "expansion" (now 1MB at 0xD30000) stays ERASEFF and holds only what exists in NEITHER
+// original ROM: rebuilt charID master tables, trampoline glue and lifted 68k code, blitted
+// in at runtime by the loader probe.
+//
+// With "Play Mode" at 1v1 and no payload loaded the set still boots and plays identically
+// to stock mvsc -- nothing in mvsc's program reaches any of the mounted address space.
 ROM_START( mvscextra )
 	ROM_REGION( CODE_SIZE, "maincpu", 0 ) // 68000 code
 	ROM_LOAD16_WORD_SWAP( "mvce.03a", 0x000000, 0x80000, CRC(824e4a90) SHA1(5c79c166d988d8a75d9941f4ee6fa4d6476e55e1) )
@@ -6293,9 +6337,32 @@ ROM_START( mvscextra )
 	ROM_LOAD16_WORD_SWAP( "mvc.09",   0x300000, 0x80000, CRC(c67b26df) SHA1(6e9969246c57269d7ba0992a5cc319c8910bf8a9) )
 	ROM_LOAD16_WORD_SWAP( "mvc.10",   0x380000, 0x80000, CRC(0fdd1e26) SHA1(5fa684d823b4f4eec61ed9e9b8938af5272ae1ed) )
 
-	ROM_REGION( 0x400000, "expansion", ROMREGION_ERASEFF ) // CPS-2X 68k expansion chip @0x930000 (plaintext; empty until transplants land)
+	ROM_REGION( 0x100000, "expansion", ROMREGION_ERASEFF ) // CPS-2X 68k expansion chip @0xD30000 (plaintext; host-side build products, blitted at runtime)
 
-	ROM_REGION( 0x4000000, "gfx", ROMREGION_ERASEFF ) // 64MB: stock 32MB + CPS-2X banks 4-7 (empty until transplants land)
+	// CPS-2X DONOR CHIP @0x930000: mshvsf's WHOLE program image, byte-for-byte, normalised
+	// to the 68k's view by the same 16-bit swapping loader ':maincpu' uses. Donor address A
+	// is readable at A + 0x930000. Nothing is excised, packed or reordered.
+	// ⚠ ROM_REGION16_BE, NOT ROM_REGION(...,0), and that is a measurement not a
+	// preference (tests/probe154_byteorder.lua).  An 8-bit LE-declared region
+	// mapped into this BE 16-bit space through an explicit `.region()` gets a
+	// byte-lane correction, so the 68k reads region[A^1] -- which is exactly why
+	// ':expansion' has to be blitted pair-swapped.  ':maincpu' escapes it only
+	// because it is mapped by the implicit `.rom()` path.  Declaring the donor
+	// chip 16-bit BE makes the region endianness match the space, the correction
+	// disappears, and ROM_LOAD16_WORD_SWAP then puts donor address A at 68k
+	// address A + 0x930000 with plain big-endian words -- one translation, no
+	// byte-order asymmetry, which is the whole point of mounting the image.
+	ROM_REGION16_BE( 0x400000, "donor", 0 )
+	ROM_LOAD16_WORD_SWAP( "mvse.03f", 0x000000, 0x80000, CRC(b72dc199) SHA1(61bd581ea4b969298f8a39fe03023b5456cac750) )
+	ROM_LOAD16_WORD_SWAP( "mvse.04f", 0x080000, 0x80000, CRC(6ef799f9) SHA1(2d45dbf7bc277b84c6bcd9615ab3b80c42af7781) )
+	ROM_LOAD16_WORD_SWAP( "mvs.05a",  0x100000, 0x80000, CRC(1a5de0cb) SHA1(738a27f83704c208d36d73bf766d861ef2d51a89) )
+	ROM_LOAD16_WORD_SWAP( "mvs.06a",  0x180000, 0x80000, CRC(959f3030) SHA1(fbbaa915324815246738f3426232e623f039ce26) )
+	ROM_LOAD16_WORD_SWAP( "mvs.07b",  0x200000, 0x80000, CRC(7f915bdb) SHA1(683da09c5ba55e31b59aa95a8e13c45dc574ab3c) )
+	ROM_LOAD16_WORD_SWAP( "mvs.08a",  0x280000, 0x80000, CRC(c2813884) SHA1(49e5d4bc48f90c8146cb6aafb9240aff0119f1a7) )
+	ROM_LOAD16_WORD_SWAP( "mvs.09b",  0x300000, 0x80000, CRC(3ba08818) SHA1(9ab132a3cac55fcccebe6c99b6fb0ba1305f8f6e) )
+	ROM_LOAD16_WORD_SWAP( "mvs.10b",  0x380000, 0x80000, CRC(cf0dba98) SHA1(f4c1f8a6e7a79ecc6241d5268b3039f8a09ea516) )
+
+	ROM_REGION( 0x4000000, "gfx", ROMREGION_ERASEFF ) // 64MB: stock 32MB (banks 0-3) + the donor's whole 32MB as CPS-2X banks 4-7
 	ROM_LOAD64_WORD( "mvc.13m",   0x0000000, 0x400000, CRC(fa5f74bc) SHA1(79a619248938a85ce4f7794a704647b9cf564fbc) )
 	ROM_LOAD64_WORD( "mvc.15m",   0x0000002, 0x400000, CRC(71938a8f) SHA1(6982f7203458c1c46a1c1c13c0d0f2a5e109d271) )
 	ROM_LOAD64_WORD( "mvc.17m",   0x0000004, 0x400000, CRC(92741d07) SHA1(ddfd70eab7c983ab452194b1860059f8ad694459) )
@@ -6304,15 +6371,27 @@ ROM_START( mvscextra )
 	ROM_LOAD64_WORD( "mvc.16m",   0x1000002, 0x400000, CRC(90bd3203) SHA1(ed83208c486ea0f407b7e5d16a8cf242a6f73774) )
 	ROM_LOAD64_WORD( "mvc.18m",   0x1000004, 0x400000, CRC(67aaf727) SHA1(e0e69104e31d2c41e18c0d24e9ab962406a7ca9a) )
 	ROM_LOAD64_WORD( "mvc.20m",   0x1000006, 0x400000, CRC(8b0bade8) SHA1(c5732361bb4bf284c4d12a82ac2c5750b1f9d441) )
+	// donor object ROM, whole: mshvsf tile c -> mvscextra tile code 0x40000 + c
+	ROM_LOAD64_WORD( "mvs.13m",   0x2000000, 0x400000, CRC(29b05fd9) SHA1(e8fdb1ee5515a560eb4256ae4fd99bb1192e1a87) )
+	ROM_LOAD64_WORD( "mvs.15m",   0x2000002, 0x400000, CRC(faddccf1) SHA1(4ed03ea91883a0413325f57edcc1614120b5922c) )
+	ROM_LOAD64_WORD( "mvs.17m",   0x2000004, 0x400000, CRC(97aaf4c7) SHA1(6a054921cc14fe080cb3f62c391f8ae3cc7e8ba9) )
+	ROM_LOAD64_WORD( "mvs.19m",   0x2000006, 0x400000, CRC(cb70e915) SHA1(da4d2480d348ac6dfd01256a88f4f3db8357ae46) )
+	ROM_LOAD64_WORD( "mvs.14m",   0x3000000, 0x400000, CRC(b3b1972d) SHA1(0f2c3fb7de014181ee481ec35d0578b2c116c2dc) )
+	ROM_LOAD64_WORD( "mvs.16m",   0x3000002, 0x400000, CRC(08aadb5d) SHA1(3a2c222eca3e7df80ce69951b3db6442312751a4) )
+	ROM_LOAD64_WORD( "mvs.18m",   0x3000004, 0x400000, CRC(c1228b35) SHA1(7afdfb552888c79d0fbb30242b3d917b87fad57a) )
+	ROM_LOAD64_WORD( "mvs.20m",   0x3000006, 0x400000, CRC(366cc6c2) SHA1(6f2a789087c8e404c5227b927fa8328c03593243) )
 
 	ROM_REGION( QSOUND_SIZE, "audiocpu", 0 ) // 64k for the audio CPU (+banks)
 	ROM_LOAD( "mvc.01",   0x00000, 0x08000, CRC(41629e95) SHA1(36925c05b5fdcbe43283a882d021e5360c947061) )
 	ROM_CONTINUE(         0x10000, 0x18000 )
 	ROM_LOAD( "mvc.02",   0x28000, 0x20000, CRC(963abf6b) SHA1(6b784870e338701cefabbbe4669984b5c4e8a9a5) )
 
-	ROM_REGION( 0x1000000, "qsound", ROMREGION_ERASEFF ) // 16MB: stock 8MB + CPS-2X sample banks 0x80+ (empty until transplants land)
+	ROM_REGION( 0x1000000, "qsound", ROMREGION_ERASEFF ) // 16MB: stock 8MB (banks 0x00-0x7F) + the donor's whole 8MB as banks 0x80-0xFF
 	ROM_LOAD16_WORD_SWAP( "mvc.11m",   0x000000, 0x400000, CRC(850fe663) SHA1(81e519d05a08855f242ea2e17ee0859b449db895) )
 	ROM_LOAD16_WORD_SWAP( "mvc.12m",   0x400000, 0x400000, CRC(7ccb1896) SHA1(74caadf3282fcc6acffb1bbe3734106f81124121) )
+	// donor sample ROM, whole: donor bank b -> mvscextra bank b + 0x80
+	ROM_LOAD16_WORD_SWAP( "mvs.11m",   0x800000, 0x400000, CRC(86219770) SHA1(4e5b68d382a5aa37f8b0b6434c53a2b95f5f9a4d) )
+	ROM_LOAD16_WORD_SWAP( "mvs.12m",   0xc00000, 0x400000, CRC(f2fd7f68) SHA1(28a30d55d3eaf963006c7cbe7c288099cd3ba536) )
 
 	ROM_REGION( 0x20, "key", 0 )
 	ROM_LOAD( "mvsc.key",     0x000000, 0x000014, CRC(7e101e09) SHA1(9d725a7c6bbc20e46f749eaec4bab15b0195077a) )
