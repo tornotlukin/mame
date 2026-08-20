@@ -568,7 +568,7 @@ ROM_START( pac4eva )
 	ROM_LOAD( "pac4eva.5y",                  0x5180, 0x0680, CRC(05ce6ee7) SHA1(040d3e31a3ad840c199feedeb9c337665ee785f6) ) // expansion ROM 4 (per-player chains; plaintext)
 	ROM_LOAD( "pac4eva.5x",                  0x5800, 0x0800, CRC(436c5e24) SHA1(77937c9c5dac268bb2fbffc2e44339c425a8b2d8) ) // expansion ROM 3 (bulk game data; plaintext)
 	ROM_LOAD( "pac4eva.6x",                  0x6000, 0x2000, CRC(7343cdd4) SHA1(9289fe93045981f8f1d7803ac1ad9631d137d2ae) ) // expansion ROM 2 (engine modules + maze tables; plaintext)
-	ROM_LOAD( "pac4eva.8x",                  0xe000, 0x2000, CRC(f5777a82) SHA1(463edecbe241f010bd4f97f345ab52f26f67931d) ) // expansion ROM (screens, ghost engine; plaintext)
+	ROM_LOAD( "pac4eva.8x",                  0xe000, 0x2000, CRC(f714cd8b) SHA1(b3dcb47e65c9c5cabe6e8878f5f8e80c7813ec4b) ) // expansion ROM (screens, ghost engine; plaintext)
 
 	ROM_REGION( 0x6000, "gfx1", 0 )   // tiles 0x2000 + sprites 0x4000 (256 shapes)
 	ROM_LOAD( "jr.pac-man_2c_11-9-83.2c",    0x0000, 0x2000, CRC(a624f5cb) SHA1(90809d9d30df183461c0c40f2da941a21fec6d5c) ) /* tiles (512) */
