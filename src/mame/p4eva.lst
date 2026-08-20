@@ -1,0 +1,13 @@
+// license:BSD-3-Clause
+// copyright-holders:TORNOTLUKIN
+/*******************************************************************************
+    p4eva.lst
+
+    Driver list for the standalone Pac-Man 4 EVA build. One title, deliberately.
+    pacman.cpp is still compiled (pac4eva_state inherits three handlers from it)
+    but none of its machines are registered, so the exe knows about exactly one
+    game and boots straight into it.
+*******************************************************************************/
+
+@source:pacman/pac4eva.cpp
+pac4eva          // Pac-Man 4 EVA
