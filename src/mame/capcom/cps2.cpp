@@ -732,6 +732,9 @@ private:
 	// Object tile codes gain bit 18 from object-record y bit 15 (64MB sprite space). Set by
 	// init_mvscextra only; stock sets never see the extra term.
 	bool m_cps2x_ext_obj = false;
+	// CPS-2X sound extension. See the block comment above cps2x_qsound_sub_map.
+	void cps2x_qsound_sub_map(address_map &map) ATTR_COLD;
+	void cps2x_qsound_banksw_w(uint8_t data);
 
 	// 4-player 2v2 tag mod (VS trilogy). See the block comment above cps2_4p_in0_r.
 	void cps2_4p_map(address_map &map) ATTR_COLD;
@@ -1400,6 +1403,46 @@ void cps2_state::cps2x_map(address_map &map)
 	cps2_4p_map(map);
 	map(0x930000, 0xd2ffff).rom().region("donor", 0);                                                                                 // CPS-2X donor chip: a whole donor program image, verbatim
 	map(0xd30000, 0xe2ffff).rom().region("expansion", 0);                                                                             // CPS-2X expansion chip: host-side build products
+}
+
+// --- CPS-2X sound extension: the audio CPU's flat data space, widened ---
+//
+// The QSound Z80 addresses ALL of its data -- master sound-ID table, sample descriptors,
+// instrument tables and note scripts -- through one FLAT space that it pages into the
+// 0x8000-0xBFFF window itself:
+//
+//     bank = (flat >> 14) - 2 ;  D003 <- bank | 0x80 ;  addr = 0x8000 | (flat & 0x3FFF)
+//
+// `bank` is computed in the accumulator and is therefore already EIGHT BITS WIDE in the
+// firmware, and `or $80` at the eight sites that write D003 is what makes 0x00-0x7F the
+// distinguishable range. So the Z80 program has always been able to address flat
+// 0x000000-0x207FFF = 2.03MB; what capped it at 288KB was the DRIVER -- `qsound_banksw_w`
+// keeps only `data & 0x0f`, and QSOUND_SIZE reserves 16 banks.
+//
+// The CPS-2X board answers that the same way it answers the object and sample walls: the
+// storage grows and the format does not change. ':audiocpu' becomes 0x210000 (128 banks,
+// which IS the firmware's own ceiling), and this handler keeps seven bits instead of four.
+// Stock sets are untouched -- they keep QSOUND_SIZE, the stock handler and 16 banks -- and
+// this one is reached only from cps2x_qsound_sub_map.
+//
+// The overflow guard is the STOCK one, unchanged: a bank past the end of the region reads
+// as bank 0 and logs, so a wrong page is loud rather than silent.
+void cps2_state::cps2x_qsound_banksw_w(uint8_t data)
+{
+	int bank = data & 0x7f;
+	if ((0x10000 + (bank * 0x4000)) >= m_audioregion->bytes())
+	{
+		logerror("%s: WARNING: CPS-2X Q sound bank overflow (%02x)\n", machine().describe_context(), data);
+		bank = 0;
+	}
+
+	m_audiobank->set_entry(bank);
+}
+
+void cps2_state::cps2x_qsound_sub_map(address_map &map)
+{
+	qsound_sub_map(map);
+	map(0xd003, 0xd003).w(FUNC(cps2_state::cps2x_qsound_banksw_w));   // 7-bit bank instead of 4
 }
 
 // --- 4-player 2v2 tag mod (xmvsf) ---
@@ -2162,7 +2205,14 @@ INPUT_PORTS_END
 void cps2_state::machine_start()
 {
 	if (m_audiocpu != nullptr) // gigaman2 has an AT89C4051 (8051) MCU as an audio cpu, no qsound.
-		m_audiobank->configure_entries(0, (QSOUND_SIZE - 0x10000) / 0x4000, memregion("audiocpu")->base() + 0x10000, 0x4000);
+	{
+		// Bank count follows the REGION, not the QSOUND_SIZE constant: every stock set declares
+		// its ':audiocpu' region as QSOUND_SIZE, so this is the same 16 banks it always was, and
+		// the CPS-2X board (which declares a larger region, see ROM_START(mvscextra)) gets the
+		// banks its own region actually holds.
+		memory_region *const rgn = memregion("audiocpu");
+		m_audiobank->configure_entries(0, (rgn->bytes() - 0x10000) / 0x4000, rgn->base() + 0x10000, 0x4000);
+	}
 }
 
 
@@ -2245,6 +2295,9 @@ void cps2_state::cps2x(machine_config &config)
 	// via y[15], see cps2_render_sprites and init_mvscextra), and a 16MB QSound sample region.
 	m_maincpu->set_addrmap(AS_PROGRAM, &cps2_state::cps2x_map);
 	m_maincpu->set_addrmap(AS_OPCODES, &cps2_state::cps2x_opcodes_map);
+	// Sound storage grows the same way: a 2MB ':audiocpu' region reached through a 7-bit bank
+	// register instead of a 4-bit one. See cps2x_qsound_banksw_w.
+	m_audiocpu->set_addrmap(AS_PROGRAM, &cps2_state::cps2x_qsound_sub_map);
 }
 
 void cps2_state::cps2comm(machine_config &config)
@@ -6381,7 +6434,14 @@ ROM_START( mvscextra )
 	ROM_LOAD64_WORD( "mvs.18m",   0x3000004, 0x400000, CRC(c1228b35) SHA1(7afdfb552888c79d0fbb30242b3d917b87fad57a) )
 	ROM_LOAD64_WORD( "mvs.20m",   0x3000006, 0x400000, CRC(366cc6c2) SHA1(6f2a789087c8e404c5227b927fa8328c03593243) )
 
-	ROM_REGION( QSOUND_SIZE, "audiocpu", 0 ) // 64k for the audio CPU (+banks)
+	// CPS-2X SOUND CHIP: 0x210000 instead of QSOUND_SIZE. The stock ROMs load at their stock
+	// offsets and nothing about them moves; what grows is the BANKED half. 128 banks of 0x4000
+	// from region 0x10000 give the Z80 flat 0x008000-0x207FFF -- which is exactly the ceiling
+	// its own bank arithmetic reaches (`(flat>>14)-2` into an 8-bit accumulator, `or $80` at
+	// every D003 write, so banks 0x00-0x7F are the distinguishable set). Stock content ends at
+	// flat 0x40000; everything above it is zero and is where the extension's relocated tables
+	// and the banked script arena live. See cps2x_qsound_banksw_w and atlas/sound-capacity.md.
+	ROM_REGION( 0x210000, "audiocpu", 0 ) // 64k for the audio CPU (+128 banks)
 	ROM_LOAD( "mvc.01",   0x00000, 0x08000, CRC(41629e95) SHA1(36925c05b5fdcbe43283a882d021e5360c947061) )
 	ROM_CONTINUE(         0x10000, 0x18000 )
 	ROM_LOAD( "mvc.02",   0x28000, 0x20000, CRC(963abf6b) SHA1(6b784870e338701cefabbbe4669984b5c4e8a9a5) )
