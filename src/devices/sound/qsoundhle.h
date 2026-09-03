@@ -26,6 +26,9 @@ public:
 	uint8_t qsound_r();
 
 protected:
+	// for subclasses that need their own device type (e.g. a board variant with a wider sample space)
+	qsound_hle_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock);
+
 	// device_t implementation
 	tiny_rom_entry const *device_rom_region() const override;
 	virtual void device_start() override ATTR_COLD;

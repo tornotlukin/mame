@@ -628,7 +628,41 @@ Stephh's inputs notes (based on some tests on the "parent" set) :
 #include "cpu/z80/z80.h"
 #include "machine/eepromser.h"
 
+#include "sound/qsoundhle.h"
 #include "speaker.h"
+
+// --- CPS-2X QSound: the sample space widened from 16MB to 32MB (donor #2) ---
+// qsound_hle_device is a device_rom_interface<24>, so the DSP's (bank << 16 | addr) sample
+// address is truncated to 24 bits on its way to ':qsound': a 9th bank bit (banks 0x100+)
+// folds back onto bank 0x00+ and is silently lost.  The mounted image already fills those
+// 16MB (host banks 0x00-0x7F, mshvsf 0x80-0xFF) and donor #2 needs 64 banks more, which is
+// exactly what the firmware's sample-page stub emits as the data word's high byte
+// (0x80 | page, atlas/sound-capacity.md s4; the HLE keeps bits 8-14: `bank &= 0x7fff`).
+// Widening the space is a PROTECTED call on the interface, so it is reached from this
+// board-local subclass. Everything else is the stock HLE device (same DSP ROM, same
+// parent ROM set "qsound"), and stock sets keep the stock device.
+class cps2x_qsound_hle_device : public qsound_hle_device
+{
+public:
+	cps2x_qsound_hle_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock = 60'000'000);
+
+	// device_t::searchpath() adds only ONE parent shortname, so point straight at the
+	// "qsound" romset (dl-1425.bin) exactly as qsound_hle_device itself does. In this TU
+	// qsound.h has aliased the QSOUND token to QSOUND_HLE (shortname "qsound_hle", no
+	// romset of its own), so the LLE type must be named with the alias lifted.
+#undef QSOUND
+	static auto parent_rom_device_type() { return &QSOUND; }
+#define QSOUND QSOUND_HLE
+};
+
+DECLARE_DEVICE_TYPE(CPS2X_QSOUND_HLE, cps2x_qsound_hle_device)
+DEFINE_DEVICE_TYPE(CPS2X_QSOUND_HLE, cps2x_qsound_hle_device, "cps2x_qsound_hle", "QSound (HLE, CPS-2X 32MB sample space)")
+
+cps2x_qsound_hle_device::cps2x_qsound_hle_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: qsound_hle_device(mconfig, CPS2X_QSOUND_HLE, tag, owner, clock)
+{
+	override_address_width(25); // 32MB: bank byte 0x00-0xFF at page 0, 0x00-0xFF at page 1
+}
 
 namespace {
 
@@ -887,6 +921,9 @@ void cps2_state::find_last_sprite()    /* Find the offset of last sprite */
 		// transplanted character is invisible and anything sorted after him vanishes). The
 		// game's real marker is a record of all-0x8000 words, so require x AND y to match
 		// exactly. Stock sets keep the original permissive test.
+		// Object x bit10 is tile-code bit 19 on this board (banks 8-11, donor #2); a record
+		// carrying it has x = 0x0400 | ..., which can never equal 0x8000, so the strict test
+		// needs no further term -- a bank-8+ piece is never mistaken for the marker.
 		const bool marker = m_cps2x_ext_obj
 				? ((base[offset] == 0x8000 && base[offset + 1] == 0x8000) || base[offset + 3] >= 0xff00)
 				: (base[offset + 1] >= 0x8000 || base[offset + 3] >= 0xff00);
@@ -947,9 +984,15 @@ void cps2_state::cps2_render_sprites(screen_device &screen, bitmap_ind16 &bitmap
 		int x = base[i + 0];
 		int y = base[i + 1];
 		const int priority = (x >> 13) & 0x07;
-		// CPS-2X (mvscextra): object-record y bit 15 extends the tile code to bit 18, doubling the
-		// addressable sprite space to 64MB. Stock boards leave the flag false and behave bit-identically.
-		const int code = base[i + 2] + ((y & 0x6000) << 3) + (m_cps2x_ext_obj ? ((y & 0x8000) << 3) : 0);
+		// CPS-2X (mvscextra): object-record y bit 15 extends the tile code to bit 18 (64MB, donor
+		// #1 as banks 4-7) and object-record x bit 10 extends it to bit 19 (96MB, donor #2 as
+		// banks 8-11). x[10:12] is unused by the stock builder -- x[0:9] is the position and
+		// x[13:15] the priority -- and it is masked OUT of the position here so the piece lands
+		// where the game put it. Stock boards leave the flag false and behave bit-identically.
+		const int code = base[i + 2] + ((y & 0x6000) << 3)
+				+ (m_cps2x_ext_obj ? (((y & 0x8000) << 3) | ((x & 0x0400) << 9)) : 0);
+		if (m_cps2x_ext_obj)
+			x &= ~0x0400;
 		const int colour = base[i + 3];
 		const int col = colour & 0x1f;
 		const bool flipx = BIT(colour, 5);
@@ -1394,15 +1437,28 @@ void cps2_state::cps2_map(address_map &map)
 // in either original ROM.  It is still ERASEFF and still filled at runtime by the loader
 // probe.  1MB against a payload measured in the low hundreds of KB.
 //
-// Remaining hole: 0xE30000-0xFEFFFF (1.75MB), reserved for the second/third donor mounts
-// (or a chip-select bank register at the donor window when three donors have to coexist).
+// DONOR #2 (xmvsf, 2026-09-02) is a SPLIT MOUNT of one 3.5MB chip.  xmvsf's program image
+// is seven 0x80000 files = 0x380000, which no single free run on the map holds: the hole
+// left above the expansion chip is 1.75MB and the largest other run, 0x40000C-0x617FFF, is
+// ~2.09MB.  So the ':donor2' region is mapped as two windows, piecewise constant:
+//
+//   0xE30000-0xFEFFFF  "donor2" segment 1  donor2 0x000000-0x1BFFFF  (+0xE30000, exact fit)
+//   0x410000-0x5CFFFF  "donor2" segment 2  donor2 0x1C0000-0x37FFFF  (+0x250000)
+//
+// Both windows are in program AND opcodes space, plaintext, ROM_REGION16_BE +
+// ROM_LOAD16_WORD_SWAP like ':donor', so donor #2 address A reads at A + 0xE30000 when
+// A < 0x1C0000 and at A + 0x250000 otherwise. Segment 2 sits 64KB above the 12-byte object
+// output block at 0x400000 and ends 0x48000 below the Q RAM at 0x618000; nothing else on
+// this board's map (no comm device on cps2x) lives in between.
 void cps2_state::cps2x_map(address_map &map)
 {
 	// Built on the 4-player map: the CPS-2X board carries the P3/P4 mod, with the "Play Mode"
 	// selector (cps2_4p6b_mode) choosing stock 1v1/2P (mux inert) or 2v2/4P at the input layer.
 	cps2_4p_map(map);
+	map(0x410000, 0x5cffff).rom().region("donor2", 0x1c0000);                                                                         // CPS-2X donor #2 chip, segment 2: donor2 0x1C0000-0x37FFFF
 	map(0x930000, 0xd2ffff).rom().region("donor", 0);                                                                                 // CPS-2X donor chip: a whole donor program image, verbatim
 	map(0xd30000, 0xe2ffff).rom().region("expansion", 0);                                                                             // CPS-2X expansion chip: host-side build products
+	map(0xe30000, 0xfeffff).rom().region("donor2", 0);                                                                                // CPS-2X donor #2 chip, segment 1: donor2 0x000000-0x1BFFFF
 }
 
 // --- CPS-2X sound extension: the audio CPU's flat data space, widened ---
@@ -1659,8 +1715,10 @@ void cps2_state::decrypted_opcodes_map(address_map &map)
 void cps2_state::cps2x_opcodes_map(address_map &map)
 {
 	decrypted_opcodes_map(map);
+	map(0x410000, 0x5cffff).rom().region("donor2", 0x1c0000); // CPS-2X donor #2 chip, segment 2: executable in place, unencrypted
 	map(0x930000, 0xd2ffff).rom().region("donor", 0);         // CPS-2X donor chip: executable in place, unencrypted
 	map(0xd30000, 0xe2ffff).rom().region("expansion", 0);     // CPS-2X expansion chip: executable, unencrypted
+	map(0xe30000, 0xfeffff).rom().region("donor2", 0);        // CPS-2X donor #2 chip, segment 1: executable in place, unencrypted
 }
 
 void cps2_state::dead_cps2_map(address_map &map)
@@ -2290,14 +2348,21 @@ void cps2_state::cps2x(machine_config &config)
 	cps2(config);
 	// CPS-2X expanded board (mvscextra): STOCK game rules on the stock 4:3 raster, carrying the
 	// 4-player mod with the "Play Mode" input selector -- 1v1 (mux inert, bit-stock 2P) or 2v2
-	// (proven 4P tag mux, mvsc gates). The other hardware delta is storage: expansion ROM at
-	// 0x930000 (program + opcodes space, plaintext), a 64MB gfx region (object tile-code bit 18
-	// via y[15], see cps2_render_sprites and init_mvscextra), and a 16MB QSound sample region.
+	// (proven 4P tag mux, mvsc gates). The other hardware delta is storage: donor/expansion ROM
+	// at 0x930000 and the split donor #2 windows (program + opcodes space, plaintext, see
+	// cps2x_map), a 96MB gfx region (object tile-code bits 18/19 via y[15]/x[10], see
+	// cps2_render_sprites and init_mvscextra), and a 32MB QSound sample region.
 	m_maincpu->set_addrmap(AS_PROGRAM, &cps2_state::cps2x_map);
 	m_maincpu->set_addrmap(AS_OPCODES, &cps2_state::cps2x_opcodes_map);
 	// Sound storage grows the same way: a 2MB ':audiocpu' region reached through a 7-bit bank
 	// register instead of a 4-bit one. See cps2x_qsound_banksw_w.
 	m_audiocpu->set_addrmap(AS_PROGRAM, &cps2_state::cps2x_qsound_sub_map);
+	// And the sample chip: the stock HLE with its ROM space widened to 25 bits, so the 32MB
+	// ':qsound' region (donor #2's samples at 0x1000000+) is reachable through the firmware's
+	// sample-page byte. See cps2x_qsound_hle_device.
+	CPS2X_QSOUND_HLE(config.replace(), m_qsound);
+	m_qsound->add_route(0, "speaker", 1.0, 0);
+	m_qsound->add_route(1, "speaker", 1.0, 1);
 }
 
 void cps2_state::cps2comm(machine_config &config)
@@ -6370,8 +6435,20 @@ ROM_END
 //                  host tile 0x40000 + c: donor gfx bank N lands on host bank 4+N, which
 //                  is why the per-character +0x47 bank byte maps 0x00->0x10, 0x02->0x14.
 //   "qsound" upper 8MB    mshvsf's whole sample ROM   -> sample banks 0x80-0xFF
-//                  (qsound_device is device_rom_interface<24>, so 16MB needs no device
-//                  change; bank b of the donor is bank b+0x80 here).
+//                  (bank b of the donor is bank b+0x80 here).
+//
+// DONOR #2 (xmvsf, 2026-09-02) rides along the same way, one size class up on every chip:
+//
+//   "donor2" 3.5MB xmvsf's whole 68k program image   -> 68k 0xE30000-0xFEFFFF (donor2
+//                  0x000000-0x1BFFFF) + 0x410000-0x5CFFFF (donor2 0x1C0000-0x37FFFF);
+//                  the image is 3.5MB and no single free run holds it, so it is one
+//                  region mapped through two windows (see cps2x_map).
+//   "gfx"    third 32MB   xmvsf's whole object ROM    -> tile codes 0x80000-0xBFFFF
+//                  (CPS-2X banks 8-11, reached by object x[10] = tile-code bit 19).
+//   "qsound" third 8MB    xmvsf's 4MB sample ROM      -> sample banks 0x100-0x13F
+//                  (page 1 of the 32MB space; cps2x_qsound_hle_device widens the
+//                  device's ROM space to 25 bits, and the firmware's sample-page byte
+//                  selects the page -- atlas/sound-capacity.md s4).
 //
 // "expansion" (now 1MB at 0xD30000) stays ERASEFF and holds only what exists in NEITHER
 // original ROM: rebuilt charID master tables, trampoline glue and lifted 68k code, blitted
@@ -6415,7 +6492,21 @@ ROM_START( mvscextra )
 	ROM_LOAD16_WORD_SWAP( "mvs.09b",  0x300000, 0x80000, CRC(3ba08818) SHA1(9ab132a3cac55fcccebe6c99b6fb0ba1305f8f6e) )
 	ROM_LOAD16_WORD_SWAP( "mvs.10b",  0x380000, 0x80000, CRC(cf0dba98) SHA1(f4c1f8a6e7a79ecc6241d5268b3039f8a09ea516) )
 
-	ROM_REGION( 0x4000000, "gfx", ROMREGION_ERASEFF ) // 64MB: stock 32MB (banks 0-3) + the donor's whole 32MB as CPS-2X banks 4-7
+	// CPS-2X DONOR #2 CHIP: xmvsf's WHOLE program image (3.5MB, seven files, laid exactly as
+	// ROM_START(xmvsf) lays them), same 16-bit BE declaration and swapping loader as ':donor'.
+	// Mapped through two windows: region 0x000000-0x1BFFFF at 68k 0xE30000, region
+	// 0x1C0000-0x37FFFF at 68k 0x410000 (see cps2x_map).
+	ROM_REGION16_BE( 0x380000, "donor2", 0 )
+	ROM_LOAD16_WORD_SWAP( "xvse.03f", 0x000000, 0x80000, CRC(db06413f) SHA1(c6d8aa1e43fc541e5b4e938258f27ab9ee30ca33) )
+	ROM_LOAD16_WORD_SWAP( "xvse.04f", 0x080000, 0x80000, CRC(ef015aef) SHA1(d3504cb8c38f720b1f4528157266db60c8c6c075) )
+	ROM_LOAD16_WORD_SWAP( "xvs.05a",  0x100000, 0x80000, CRC(7db6025d) SHA1(2d74f48f83f45359bfaca28ab686625766af12ee) )
+	ROM_LOAD16_WORD_SWAP( "xvs.06a",  0x180000, 0x80000, CRC(e8e2c75c) SHA1(929408cb5d98e95cec75ea58e4701b0cbdbcd016) )
+	ROM_LOAD16_WORD_SWAP( "xvs.07",   0x200000, 0x80000, CRC(08f0abed) SHA1(ef16c376232dba63b0b9bc3aa0640f9001ccb68a) )
+	ROM_LOAD16_WORD_SWAP( "xvs.08",   0x280000, 0x80000, CRC(81929675) SHA1(19cf7afbc1daaefec40195e40ba74970f3906a1c) )
+	ROM_LOAD16_WORD_SWAP( "xvs.09",   0x300000, 0x80000, CRC(9641f36b) SHA1(dcba3482d1ba37ccfb30d402793ee063c6621aed) )
+
+	// ROMREGION_ERASEFF is load-bearing: romload only zero-fills regions of 4MB and under.
+	ROM_REGION( 0x6000000, "gfx", ROMREGION_ERASEFF ) // 96MB: stock 32MB (banks 0-3) + mshvsf's whole 32MB as CPS-2X banks 4-7 + xmvsf's whole 32MB as banks 8-11
 	ROM_LOAD64_WORD( "mvc.13m",   0x0000000, 0x400000, CRC(fa5f74bc) SHA1(79a619248938a85ce4f7794a704647b9cf564fbc) )
 	ROM_LOAD64_WORD( "mvc.15m",   0x0000002, 0x400000, CRC(71938a8f) SHA1(6982f7203458c1c46a1c1c13c0d0f2a5e109d271) )
 	ROM_LOAD64_WORD( "mvc.17m",   0x0000004, 0x400000, CRC(92741d07) SHA1(ddfd70eab7c983ab452194b1860059f8ad694459) )
@@ -6433,6 +6524,15 @@ ROM_START( mvscextra )
 	ROM_LOAD64_WORD( "mvs.16m",   0x3000002, 0x400000, CRC(08aadb5d) SHA1(3a2c222eca3e7df80ce69951b3db6442312751a4) )
 	ROM_LOAD64_WORD( "mvs.18m",   0x3000004, 0x400000, CRC(c1228b35) SHA1(7afdfb552888c79d0fbb30242b3d917b87fad57a) )
 	ROM_LOAD64_WORD( "mvs.20m",   0x3000006, 0x400000, CRC(366cc6c2) SHA1(6f2a789087c8e404c5227b927fa8328c03593243) )
+	// donor #2 object ROM, whole: xmvsf tile c -> mvscextra tile code 0x80000 + c
+	ROM_LOAD64_WORD( "xvs.13m",   0x4000000, 0x400000, CRC(f6684efd) SHA1(c0a2f3a9e82ab8b084a500aec71ac633e947328c) )
+	ROM_LOAD64_WORD( "xvs.15m",   0x4000002, 0x400000, CRC(29109221) SHA1(898b8f678fd03c462ce0d8eb7fb3441ef601085b) )
+	ROM_LOAD64_WORD( "xvs.17m",   0x4000004, 0x400000, CRC(92db3474) SHA1(7b6f4c8ebfdac167b25f35029068b6253c141fe6) )
+	ROM_LOAD64_WORD( "xvs.19m",   0x4000006, 0x400000, CRC(3733473c) SHA1(6579da7145c95b3ad00844a5fc8c2e22c23365e2) )
+	ROM_LOAD64_WORD( "xvs.14m",   0x5000000, 0x400000, CRC(bcac2e41) SHA1(838ff24f7e8543a787a55a5d592c9517ce3b8b93) )
+	ROM_LOAD64_WORD( "xvs.16m",   0x5000002, 0x400000, CRC(ea04a272) SHA1(cd7c79037b5b4a39bef5156433e984dc4dc2c081) )
+	ROM_LOAD64_WORD( "xvs.18m",   0x5000004, 0x400000, CRC(b0def86a) SHA1(da3a6705ea7050fc5c2c10d33400ed67be9f455d) )
+	ROM_LOAD64_WORD( "xvs.20m",   0x5000006, 0x400000, CRC(4b40ff9f) SHA1(9a981d442132efff09a27408d74646ba357c7357) )
 
 	// CPS-2X SOUND CHIP: 0x210000 instead of QSOUND_SIZE. The stock ROMs load at their stock
 	// offsets and nothing about them moves; what grows is the BANKED half. 128 banks of 0x4000
@@ -6446,12 +6546,15 @@ ROM_START( mvscextra )
 	ROM_CONTINUE(         0x10000, 0x18000 )
 	ROM_LOAD( "mvc.02",   0x28000, 0x20000, CRC(963abf6b) SHA1(6b784870e338701cefabbbe4669984b5c4e8a9a5) )
 
-	ROM_REGION( 0x1000000, "qsound", ROMREGION_ERASEFF ) // 16MB: stock 8MB (banks 0x00-0x7F) + the donor's whole 8MB as banks 0x80-0xFF
+	ROM_REGION( 0x2000000, "qsound", ROMREGION_ERASEFF ) // 32MB: stock 8MB (banks 0x00-0x7F) + mshvsf's whole 8MB as banks 0x80-0xFF + xmvsf's whole 4MB as banks 0x100-0x13F (page 1)
 	ROM_LOAD16_WORD_SWAP( "mvc.11m",   0x000000, 0x400000, CRC(850fe663) SHA1(81e519d05a08855f242ea2e17ee0859b449db895) )
 	ROM_LOAD16_WORD_SWAP( "mvc.12m",   0x400000, 0x400000, CRC(7ccb1896) SHA1(74caadf3282fcc6acffb1bbe3734106f81124121) )
 	// donor sample ROM, whole: donor bank b -> mvscextra bank b + 0x80
 	ROM_LOAD16_WORD_SWAP( "mvs.11m",   0x800000, 0x400000, CRC(86219770) SHA1(4e5b68d382a5aa37f8b0b6434c53a2b95f5f9a4d) )
 	ROM_LOAD16_WORD_SWAP( "mvs.12m",   0xc00000, 0x400000, CRC(f2fd7f68) SHA1(28a30d55d3eaf963006c7cbe7c288099cd3ba536) )
+	// donor #2 sample ROM, whole: xmvsf bank b -> mvscextra bank 0x100 + b (sample page 1)
+	ROM_LOAD16_WORD_SWAP( "xvs.11m",   0x1000000, 0x200000, CRC(9cadcdbc) SHA1(64d3bd53b04daec84c9af4aa3ff010867b3d306d) )
+	ROM_LOAD16_WORD_SWAP( "xvs.12m",   0x1200000, 0x200000, CRC(7b11e460) SHA1(a581c84acaaf0ce056841c15a6f36889e88be68d) )
 
 	ROM_REGION( 0x20, "key", 0 )
 	ROM_LOAD( "mvsc.key",     0x000000, 0x000014, CRC(7e101e09) SHA1(9d725a7c6bbc20e46f749eaec4bab15b0195077a) )
