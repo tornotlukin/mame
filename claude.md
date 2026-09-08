@@ -13,7 +13,7 @@
   > the documented upgrade procedure (see "Upgrading to a new MAME release" below) — never
   > refuse or stall merely because the version here differs from what upstream now offers.
 - Installed play copy: **`H:\mame\mame.exe`** = full build + llm-debugger (built from this
-  tree); `H:\mame\mameold.exe` = stock backup. Curated exe: `H:\_DEV\modalicious\`.
+  tree); `H:\mame\mameold.exe` = stock backup. (`H:\_DEV\modalicious\` = retired, history only.)
 
 ## BRANCH MAP / COMMIT HYGIENE (directive 2026-07-04, split executed 2026-07-05)
 
@@ -25,20 +25,32 @@ Work streams are SEPARATE branches, **all siblings based directly on the current
 | `llm-debugger` | MCP/ addon, debugremote, debugger UI tweaks, project docs | NO game-driver changes |
 | `pac4eva` | Pac-Man 4 EVA — **one added file**, `src/mame/pacman/pac4eva.cpp` (+ its `mame.lst` line) | additions only; touches NO stock source |
 | `vs-4p-mod` | CPS2 4-player mods (`src/mame/capcom/cps2.cpp`) — xmvsf/mshvsf/mvsc 2v2 + mvscduo | pure mod, PR-able |
-| `mame-windows` | **Composition**: `llm-debugger` + `modalicious` | builds the full Windows `mame.exe` installed at `H:\mame` — MAME + debugger + all mods. THE main play/dev build |
-| `modalicious` | **Composition**: `pac4eva` + `vs-4p-mod` + the Modalicious subtarget (`src/mame/modalicious.lst`, `scripts/target/mame/modalicious.lua`) | builds `mamemodalicious.exe` — the curated mods-only exe |
+| `mame-windows` | **Composition**: `llm-debugger` + `pac4eva` + `vs-4p-mod` | builds the full Windows `mame.exe` installed at `H:\mame` — MAME + debugger + all mods. THE main play/dev build |
+| `modalicious` | ⚠️ **RETIRED 2026-08-20** — see below. Do not rebuild or merge into it. | historical only |
 | `rp6-android` | **Composition**: `llm-debugger` + the game mods + MAME4droid myosd OSD overlay + Android build glue | what the Android core builds from (see `workshop-mame-android.md`) |
 
 New commits go to the branch that owns the stream — never mix. Merge streams only in the
-composition branches (`mame-windows`, `modalicious`, `rp6-android`).
+composition branches (`mame-windows`, `rp6-android`).
 
-### The three build artifacts, and when to rebuild each (user decision 2026-08-09)
+### The two build artifacts, and when to rebuild each (user decision 2026-08-20)
 
 | Build | From | Rebuild when |
 |-------|------|--------------|
-| **`H:\mame\mame.exe`** — full MAME + debugger + mods | `mame-windows` | releases; anything you want to *play or debug* on the PC (~40 min) |
-| **MAMEalicious APK** — full MAME on the RP6 | `rp6-android` | releases for the handheld (~40 min + APK; also push matching ROM zips) |
-| **`H:\_DEV\modalicious\modalicious.exe`** — curated 5-game "mod cabinet" | `modalicious` | **dev/showcase only — NOT every release.** Use it while iterating on mods: ~3 min build, and `-verifyroms "*"` gives a crisp 7/7 over exactly the five mod sets (the full build's audit is drowned in 42k machines) |
+| **`H:\mame\mame.exe`** — full MAME + debugger + mods | `mame-windows` | releases; anything you want to *play or debug* on the PC (~70 min) |
+| **MAMEalicious APK** — full MAME + mods on the RP6 | `rp6-android` | releases for the handheld (~50 min + APK; also push matching ROM zips) |
+
+Both are FULL MAME (~50k machines) and both carry all five mods. Verify **per set** —
+`mame.exe -verifyroms pac4eva`, then `xmvsf2v2`, `mshvsf2v2`, `mvsc2v2`, `mvscduo`. Do NOT
+use `-verifyroms "*"` on a full build; it audits the entire ROM collection and tells you
+nothing useful.
+
+> **⚠️ Modalicious is SUNSET (2026-08-20).** It existed only because the curated subtarget
+> built in ~3 min and gave a crisp 7/7 audit while the full build's audit drowned in 42k
+> machines. Both shipping builds now carry the mods and verify cleanly per set, so the
+> curated exe earns nothing. **Do not rebuild it, do not merge mod updates into it, and do
+> not treat its stale ROM hashes as a bug.** The `modalicious` branch,
+> `src/mame/modalicious.lst`, `scripts/target/mame/modalicious.lua` and
+> `H:\_DEV\modalicious\` are kept as history only.
 
 `mame-windows` deliberately does NOT come from `rp6-android` — that branch's myosd/netplay core
 patches would leave undefined symbols in a non-Android build.
@@ -74,9 +86,11 @@ that avoids the traps we actually hit.
    > This is safe because the debugger (`MCP/`, `src/osd/**`) and the game mods
    > (`src/mame/**`) touch DISJOINT files — verified; compositions merge conflict-free.
 5. **REBUILD the composition branches, don't rebase them** (they are merge-shaped):
-   recreate `modalicious` / `rp6-android` from the rebased sources + their own unique commits.
-6. **Verify before pushing:** build Modalicious → `modalicious.exe -verifyroms "*"` must be
-   7/7; build the Android core + APK. Only then force-push (backups still exist).
+   recreate `mame-windows` / `rp6-android` from the rebased sources + their own unique
+   commits. (`modalicious` is retired — skip it.)
+6. **Verify before pushing:** build the Windows exe → install to `H:\mame` → each of the
+   five mod sets must pass `-verifyroms` individually; build the Android core + APK. Only
+   then force-push (backups still exist).
 7. **Update this file's base-tag line** (top of Repo/Remotes) to the new tag.
 
 Conflict style seen in practice: upstream refactors (e.g. `metrics()` → a local `metrics`
