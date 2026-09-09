@@ -184,6 +184,38 @@ Self-contained addon code lives under `MCP/` (see `MCP/README.md` and
 - `MCP/launch/start_debugger.bat` — Windows launcher
 - `.mcp.json` — at repo root (Claude Code discovers it); points to `MCP/bridge/mcp_server.py`
 
+### Making the MCP work on EVERY branch (set up 2026-09-08)
+
+`MCP/` **and** `.mcp.json` are both branch-tracked, so checking out a pure mod branch
+(`pac4eva`, `vs-4p-mod`) deletes the server config *and* the script — Claude then reports
+`mame-debugger (CONNECTION_CLOSED)`. That is a dead path, not a MAME/TCP problem; it never
+reaches port 12345.
+
+The fix, in place now — **a branch-independent fallback**:
+
+- **Deployed copy:** `H:\_DEV\mame-mcp\bridge\` — a plain copy of `MCP/bridge/`, outside any
+  worktree, so no checkout can remove it. The bridge sets `sys.path` from `__file__`, so it
+  runs from anywhere.
+- **User-scope registration** (in `~/.claude.json`, NOT git-tracked, applies to every project
+  and branch):
+  `claude mcp add mame-debugger -s user -e MAME_DEBUG_HOST=localhost -e MAME_DEBUG_PORT=12345 -- python H:/_DEV/mame-mcp/bridge/mcp_server.py`
+- **Precedence:** where `.mcp.json` exists (`llm-debugger`, `mame-windows`, `rp6-android`)
+  the project entry wins and its relative path resolves, because `MCP/` is present there.
+  On branches without it, the user-scope entry takes over. Nothing in git changed.
+- **After editing `MCP/bridge/`, refresh the deployed copy** or the fallback runs stale code:
+  `cp MCP/bridge/*.py MCP/bridge/requirements.txt /h/_DEV/mame-mcp/bridge/`
+
+⚠️ **MCP access is only half of debugging a mod.** The exe must also contain `debugremote`,
+and the pure mod branches do NOT have it (`pac4eva` and `vs-4p-mod` carry 0 debugremote
+files). **Debug against `H:\mame\mame.exe`** — built from `mame-windows`, so it has the
+debugger *and* all five mods. Never expect to debug a build made from a bare mod branch.
+
+⚠️ **Ancestry is not content.** `git merge-base --is-ancestor llm-debugger <branch>` answers
+"did history flow through it", never "does this branch contain the debugger". Code arrives
+via cherry-pick or rebase with the ancestry link dropped — `mvscextra` fails the ancestry
+test yet carries debugremote blobs identical to `llm-debugger`'s. Measure the artifact:
+`ls-tree | grep debugremote`, or `<exe> -showusage | grep debugger_port`.
+
 Core-MAME touch-points (kept in the source tree because they compile into `mame.exe`):
 
 - `src/osd/modules/debugger/debugremote.cpp` / `debugremote_tcp.h` — TCP JSON debug module (new)
