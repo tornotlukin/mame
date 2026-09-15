@@ -763,8 +763,9 @@ private:
 	// CPS-2X expanded board (mvscextra). See the block comment above cps2x_map.
 	void cps2x_map(address_map &map) ATTR_COLD;
 	void cps2x_opcodes_map(address_map &map) ATTR_COLD;
-	// Object tile codes gain bit 18 from object-record y bit 15 (64MB sprite space). Set by
-	// init_mvscextra only; stock sets never see the extra term.
+	// Object tile codes gain bit 18 from object-record y bit 15 and bit 19 from x bit 10, and
+	// object x bits 11-12 select the extended sprite palette pages 4-5. Set by init_mvscextra
+	// only; stock sets never see the extra terms.
 	bool m_cps2x_ext_obj = false;
 	// CPS-2X sound extension. See the block comment above cps2x_qsound_sub_map.
 	void cps2x_qsound_sub_map(address_map &map) ATTR_COLD;
@@ -923,7 +924,8 @@ void cps2_state::find_last_sprite()    /* Find the offset of last sprite */
 		// exactly. Stock sets keep the original permissive test.
 		// Object x bit10 is tile-code bit 19 on this board (banks 8-11, donor #2); a record
 		// carrying it has x = 0x0400 | ..., which can never equal 0x8000, so the strict test
-		// needs no further term -- a bank-8+ piece is never mistaken for the marker.
+		// needs no further term -- a bank-8+ piece is never mistaken for the marker. The same holds
+		// for the extended-palette bits x[11:12].
 		const bool marker = m_cps2x_ext_obj
 				? ((base[offset] == 0x8000 && base[offset + 1] == 0x8000) || base[offset + 3] >= 0xff00)
 				: (base[offset + 1] >= 0x8000 || base[offset + 3] >= 0xff00);
@@ -991,10 +993,19 @@ void cps2_state::cps2_render_sprites(screen_device &screen, bitmap_ind16 &bitmap
 		// where the game put it. Stock boards leave the flag false and behave bit-identically.
 		const int code = base[i + 2] + ((y & 0x6000) << 3)
 				+ (m_cps2x_ext_obj ? (((y & 0x8000) << 3) | ((x & 0x0400) << 9)) : 0);
+		// CPS-2X extended sprite palette: object x[11] moves the piece off palette page 0 onto
+		// page 4 (colour codes 0x80-0x9F) and x[11]+x[12] onto page 5 (0xA0-0xBF). Those pages
+		// are already copied from gfxram every time the palette base register is written
+		// (control bits 4-5, see cps1_build_palette) and no CPS2 layer draws from them, so each
+		// palette block (live 0x914000, freeze 0x92E000, ...) carries its own 64 extra sprite
+		// lines at base+0x1000. x[12] without x[11] is reserved and selects page 0. With x[11]
+		// clear the colour code is the stock `colour & 0x1f` unchanged. x[11:12] are masked out
+		// of the position with x[10].
+		const int ext_pal = m_cps2x_ext_obj ? ((x >> 11) & 0x03) : 0;
 		if (m_cps2x_ext_obj)
-			x &= ~0x0400;
+			x &= ~0x1c00;
 		const int colour = base[i + 3];
-		const int col = colour & 0x1f;
+		const int col = (colour & 0x1f) + (BIT(ext_pal, 0) ? (BIT(ext_pal, 1) ? 0xa0 : 0x80) : 0);
 		const bool flipx = BIT(colour, 5);
 		const bool flipy = BIT(colour, 6);
 
@@ -11843,6 +11854,11 @@ void cps2_state::init_mvscextra()
 {
 	init_vs4p(0xff3800, 0xff3c00);
 	m_cps2x_ext_obj = true;
+	// Extended sprite palette pages 4-5 (object x[11:12], see cps2_render_sprites): the 16x16
+	// element is declared with 0x80 colour codes and the renderer takes the code modulo that
+	// count, so widen it to the 0xC0 codes the 0xC00-pen palette holds. Codes below 0x80 (sprites
+	// 0x00-0x1F, scroll2 0x40-0x5F) resolve to the same pens under either modulus.
+	m_gfxdecode->gfx(2)->set_colors(0xc0);
 }
 
 void cps2_state::init_cps2nc()
