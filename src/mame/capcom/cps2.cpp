@@ -986,9 +986,10 @@ void cps2_state::cps2_render_sprites(screen_device &screen, bitmap_ind16 &bitmap
 		int x = base[i + 0];
 		int y = base[i + 1];
 		const int priority = (x >> 13) & 0x07;
-		// CPS-2X (mvscextra): object-record y bit 15 extends the tile code to bit 18 (64MB, donor
-		// #1 as banks 4-7) and object-record x bit 10 extends it to bit 19 (96MB, donor #2 as
-		// banks 8-11). x[10:12] is unused by the stock builder -- x[0:9] is the position and
+		// CPS-2X (mvscextra): object-record y bit 15 extends the tile code to bit 18 (donor #1
+		// as banks 4-7) and object-record x bit 10 extends it to bit 19 (donor #2 as banks
+		// 8-11); both set together reach banks 12-15, the mshx tile space of the 128MB region.
+		// x[10:12] is unused by the stock builder -- x[0:9] is the position and
 		// x[13:15] the priority -- and it is masked OUT of the position here so the piece lands
 		// where the game put it. Stock boards leave the flag false and behave bit-identically.
 		const int code = base[i + 2] + ((y & 0x6000) << 3)
@@ -1461,12 +1462,33 @@ void cps2_state::cps2_map(address_map &map)
 // A < 0x1C0000 and at A + 0x250000 otherwise. Segment 2 sits 64KB above the 12-byte object
 // output block at 0x400000 and ends 0x48000 below the Q RAM at 0x618000; nothing else on
 // this board's map (no comm device on cps2x) lives in between.
+//
+// THE MSHX CHIP (2026-09-25) is a BUILT chip, not a mount: the converter emits the msh
+// characters already translated into mvsc's dialect (VS group ids, 16-byte records, mvsc
+// struct offsets), so it follows the ':expansion' precedent -- plaintext, in program AND
+// opcodes space, ERASEFF until the loader probe blits `mshx.bin` -- and NOT the donor
+// precedent of a whole verbatim image:
+//
+//   0x710000-0x7FFFFF  "mshx"   960KB  the converted msh characters (code + data)
+//   0x620000-0x65FFFF  "mshx2"  256KB  growth window, empty until a build fills it
+//
+// 0x710000 is the first byte above the object-RAM mirror (0x708000 + mirror 0x6000 ends at
+// 0x70FFFF) and 0x7FFFFF the last below the CPS-A register mirror at 0x800100, so ':mshx'
+// is the whole hole. The growth window sits above the Q RAM (0x618000-0x619FFF) and below
+// the add-on RAM at 0x660000; the comm-device registers at 0x620000-0x620021 exist only on
+// cps2_comm_map, which this board does not use. A decoded-instruction census of mvsc,
+// mshvsf and xmvsf found no address-shaped reference into either window (one `ori.l
+// #$7f0018` data constant each), so both are inert for the host game and for the donors.
+// Unlike ':expansion' both are ROM_REGION16_BE, like the donor chips, so the region's byte
+// order matches the space and a blit lands verbatim in the 68k view (no A^1 pair swap).
 void cps2_state::cps2x_map(address_map &map)
 {
 	// Built on the 4-player map: the CPS-2X board carries the P3/P4 mod, with the "Play Mode"
 	// selector (cps2_4p6b_mode) choosing stock 1v1/2P (mux inert) or 2v2/4P at the input layer.
 	cps2_4p_map(map);
 	map(0x410000, 0x5cffff).rom().region("donor2", 0x1c0000);                                                                         // CPS-2X donor #2 chip, segment 2: donor2 0x1C0000-0x37FFFF
+	map(0x620000, 0x65ffff).rom().region("mshx2", 0);                                                                                 // CPS-2X mshx growth chip: empty until a build fills it
+	map(0x710000, 0x7fffff).rom().region("mshx", 0);                                                                                  // CPS-2X mshx chip: the converted msh characters (built, plaintext)
 	map(0x930000, 0xd2ffff).rom().region("donor", 0);                                                                                 // CPS-2X donor chip: a whole donor program image, verbatim
 	map(0xd30000, 0xe2ffff).rom().region("expansion", 0);                                                                             // CPS-2X expansion chip: host-side build products
 	map(0xe30000, 0xfeffff).rom().region("donor2", 0);                                                                                // CPS-2X donor #2 chip, segment 1: donor2 0x000000-0x1BFFFF
@@ -1727,6 +1749,8 @@ void cps2_state::cps2x_opcodes_map(address_map &map)
 {
 	decrypted_opcodes_map(map);
 	map(0x410000, 0x5cffff).rom().region("donor2", 0x1c0000); // CPS-2X donor #2 chip, segment 2: executable in place, unencrypted
+	map(0x620000, 0x65ffff).rom().region("mshx2", 0);         // CPS-2X mshx growth chip: executable, unencrypted
+	map(0x710000, 0x7fffff).rom().region("mshx", 0);          // CPS-2X mshx chip: executable, unencrypted
 	map(0x930000, 0xd2ffff).rom().region("donor", 0);         // CPS-2X donor chip: executable in place, unencrypted
 	map(0xd30000, 0xe2ffff).rom().region("expansion", 0);     // CPS-2X expansion chip: executable, unencrypted
 	map(0xe30000, 0xfeffff).rom().region("donor2", 0);        // CPS-2X donor #2 chip, segment 1: executable in place, unencrypted
@@ -2360,9 +2384,10 @@ void cps2_state::cps2x(machine_config &config)
 	// CPS-2X expanded board (mvscextra): STOCK game rules on the stock 4:3 raster, carrying the
 	// 4-player mod with the "Play Mode" input selector -- 1v1 (mux inert, bit-stock 2P) or 2v2
 	// (proven 4P tag mux, mvsc gates). The other hardware delta is storage: donor/expansion ROM
-	// at 0x930000 and the split donor #2 windows (program + opcodes space, plaintext, see
-	// cps2x_map), a 96MB gfx region (object tile-code bits 18/19 via y[15]/x[10], see
-	// cps2_render_sprites and init_mvscextra), and a 32MB QSound sample region.
+	// at 0x930000, the split donor #2 windows and the built mshx chips at 0x710000/0x620000
+	// (program + opcodes space, plaintext, see cps2x_map), a 128MB gfx region (object
+	// tile-code bits 18/19 via y[15]/x[10], see cps2_render_sprites and init_mvscextra), and
+	// a 32MB QSound sample region.
 	m_maincpu->set_addrmap(AS_PROGRAM, &cps2_state::cps2x_map);
 	m_maincpu->set_addrmap(AS_OPCODES, &cps2_state::cps2x_opcodes_map);
 	// Sound storage grows the same way: a 2MB ':audiocpu' region reached through a 7-bit bank
@@ -6465,6 +6490,20 @@ ROM_END
 // original ROM: rebuilt charID master tables, trampoline glue and lifted 68k code, blitted
 // in at runtime by the loader probe.
 //
+// THE MSHX CHIPS (2026-09-25) carry the msh exclusives, and msh is NOT mounted: its
+// characters are BUILT by the converter into mvsc's dialect, so what lands on the board is
+// a build product like the expansion, never a verbatim msh image:
+//
+//   "mshx"   960KB  converted msh characters, code + data   -> 68k 0x710000-0x7FFFFF
+//   "mshx2"  256KB  growth window, empty until a build fills it -> 68k 0x620000-0x65FFFF
+//   "gfx"    fourth 32MB   msh tiles as CPS-2X banks 12-15  -> tile codes 0xC0000-0xFFFFF
+//                  (reached by object y[15] AND x[10] both set: bits 18 and 19 together).
+//   "qsound" unchanged: msh samples ride the existing page-1 banks 0x140-0x17F.
+//
+// Both mshx regions are ERASEFF (0xFFFF is an illegal 68k instruction, so a pointer aimed
+// past a lane traps instead of executing zeros as `ori.b #0,d0`) and are filled at runtime
+// by the loader probe during the build campaign; a release build gains ROM_LOAD lines.
+//
 // With "Play Mode" at 1v1 and no payload loaded the set still boots and plays identically
 // to stock mvsc -- nothing in mvsc's program reaches any of the mounted address space.
 ROM_START( mvscextra )
@@ -6479,6 +6518,15 @@ ROM_START( mvscextra )
 	ROM_LOAD16_WORD_SWAP( "mvc.10",   0x380000, 0x80000, CRC(0fdd1e26) SHA1(5fa684d823b4f4eec61ed9e9b8938af5272ae1ed) )
 
 	ROM_REGION( 0x100000, "expansion", ROMREGION_ERASEFF ) // CPS-2X 68k expansion chip @0xD30000 (plaintext; host-side build products, blitted at runtime)
+
+	// CPS-2X MSHX CHIP @0x710000: the converted msh characters. A BUILT chip in mvsc's dialect
+	// (VS group ids, 16-byte records, mvsc struct offsets), never a mounted msh ROM.
+	// ROM_REGION16_BE like the donor chips, so the region's byte order matches the space and
+	// the loader blits mshx.bin verbatim in the 68k view -- the A^1 pair swap stays the
+	// ':expansion' quirk (see the donor chip note below). ERASEFF: filled at runtime by the
+	// loader probe during the build campaign; a release build ROM_LOADs the files here.
+	ROM_REGION16_BE( 0xf0000, "mshx", ROMREGION_ERASEFF )
+	ROM_REGION16_BE( 0x40000, "mshx2", ROMREGION_ERASEFF ) // CPS-2X mshx growth chip @0x620000
 
 	// CPS-2X DONOR CHIP @0x930000: mshvsf's WHOLE program image, byte-for-byte, normalised
 	// to the 68k's view by the same 16-bit swapping loader ':maincpu' uses. Donor address A
@@ -6517,7 +6565,13 @@ ROM_START( mvscextra )
 	ROM_LOAD16_WORD_SWAP( "xvs.09",   0x300000, 0x80000, CRC(9641f36b) SHA1(dcba3482d1ba37ccfb30d402793ee063c6621aed) )
 
 	// ROMREGION_ERASEFF is load-bearing: romload only zero-fills regions of 4MB and under.
-	ROM_REGION( 0x6000000, "gfx", ROMREGION_ERASEFF ) // 96MB: stock 32MB (banks 0-3) + mshvsf's whole 32MB as CPS-2X banks 4-7 + xmvsf's whole 32MB as banks 8-11
+	// The fourth 32MB (banks 12-15, tile codes 0xC0000-0xFFFFF) is the mshx tile space: it
+	// stays ERASEFF (an all-0xFF tile is every pixel at pen 15 = transparent, so an
+	// unfilled code draws nothing) and is blitted at runtime like the HUD plates; a release
+	// build ROM_LOADs mshx tile files at 0x6000000. cps2_gfx_decode unshuffles the region in
+	// 0x200000 steps whatever its size, and cps2_render_sprites already composes tile-code
+	// bits 18 and 19 from y[15] and x[10], so the growth itself is the whole gfx change.
+	ROM_REGION( 0x8000000, "gfx", ROMREGION_ERASEFF ) // 128MB: stock 32MB (banks 0-3) + mshvsf's whole 32MB as CPS-2X banks 4-7 + xmvsf's whole 32MB as banks 8-11 + mshx as banks 12-15
 	ROM_LOAD64_WORD( "mvc.13m",   0x0000000, 0x400000, CRC(fa5f74bc) SHA1(79a619248938a85ce4f7794a704647b9cf564fbc) )
 	ROM_LOAD64_WORD( "mvc.15m",   0x0000002, 0x400000, CRC(71938a8f) SHA1(6982f7203458c1c46a1c1c13c0d0f2a5e109d271) )
 	ROM_LOAD64_WORD( "mvc.17m",   0x0000004, 0x400000, CRC(92741d07) SHA1(ddfd70eab7c983ab452194b1860059f8ad694459) )
