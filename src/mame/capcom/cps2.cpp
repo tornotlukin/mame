@@ -1486,6 +1486,12 @@ void cps2_state::cps2x_map(address_map &map)
 	// Built on the 4-player map: the CPS-2X board carries the P3/P4 mod, with the "Play Mode"
 	// selector (cps2_4p6b_mode) choosing stock 1v1/2P (mux inert) or 2v2/4P at the input layer.
 	cps2_4p_map(map);
+	// The "Play Mode" switch, readable by the program: bit 0 is the bit the 2v2 mux tests
+	// (0 = 1v1, 1 = 2v2), the other bits read 0. Read-only, next to the raw P3/P4 pads at
+	// 0x804050/0x804052 in the unmapped gap of the CPS2 I/O map. Only the CPS-2X board maps it:
+	// the ROM selector reads it to decide whether a team's second pick belongs to P3/P4. The
+	// stock 4-player sets keep cps2_4p_map as it is (their programs never read the switch).
+	map(0x804054, 0x804055).lr16(NAME([this]() -> uint16_t { return m_vs4p_playmode.read_safe(0) & 0x0001; }));
 	map(0x410000, 0x5cffff).rom().region("donor2", 0x1c0000);                                                                         // CPS-2X donor #2 chip, segment 2: donor2 0x1C0000-0x37FFFF
 	map(0x620000, 0x65ffff).rom().region("mshx2", 0);                                                                                 // CPS-2X mshx growth chip: empty until a build fills it
 	map(0x710000, 0x7fffff).rom().region("mshx", 0);                                                                                  // CPS-2X mshx chip: the converted msh characters (built, plaintext)
