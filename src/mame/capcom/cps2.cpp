@@ -774,12 +774,15 @@ private:
 	// 4-player 2v2 tag mod (VS trilogy). See the block comment above cps2_4p_in0_r.
 	void cps2_4p_map(address_map &map) ATTR_COLD;
 	bool vs4p_partner_on_point(int team);
+	uint16_t vs4p_effective_playmode();
 	uint16_t cps2_4p_in0_r();
 	uint16_t cps2_4p_in1_r();
 	uint16_t cps2_4p_in2_r();
 	// Work-RAM address of each team's on-point index. 0 = not yet mapped for this set, which
 	// leaves the mux inert and the game bit-for-bit stock.
 	uint32_t m_vs4p_gate[2] = { 0, 0 };
+	// CPS-2X: the Play Mode the GAME chose (its test menu's PLAYERS setting, written to 0x804056).
+	uint16_t m_vs4p_playmode_game = 0;
 
 	void init_cps2_video() ATTR_COLD;
 	void init_cps2crypt() ATTR_COLD;
@@ -1486,12 +1489,16 @@ void cps2_state::cps2x_map(address_map &map)
 	// Built on the 4-player map: the CPS-2X board carries the P3/P4 mod, with the "Play Mode"
 	// selector (cps2_4p6b_mode) choosing stock 1v1/2P (mux inert) or 2v2/4P at the input layer.
 	cps2_4p_map(map);
-	// The "Play Mode" switch, readable by the program: bit 0 is the bit the 2v2 mux tests
-	// (0 = 1v1, 1 = 2v2), the other bits read 0. Read-only, next to the raw P3/P4 pads at
-	// 0x804050/0x804052 in the unmapped gap of the CPS2 I/O map. Only the CPS-2X board maps it:
-	// the ROM selector reads it to decide whether a team's second pick belongs to P3/P4. The
-	// stock 4-player sets keep cps2_4p_map as it is (their programs never read the switch).
-	map(0x804054, 0x804055).lr16(NAME([this]() -> uint16_t { return m_vs4p_playmode.read_safe(0) & 0x0001; }));
+	// The EFFECTIVE Play Mode, readable by the program at 0x804054: bit 0 is the bit the 2v2 mux
+	// tests (0 = 1v1, 1 = 2v2), the other bits read 0. The game WRITES its own choice (the test
+	// menu's PLAYERS setting, kept in its EEPROM) to 0x804056; the MAME "Play Mode" setting is an
+	// OVERRIDE for testing: "From game settings" (the default) returns the game's choice, "1v1" /
+	// "2v2" force it. Both sit next to the raw P3/P4 pads at 0x804050/0x804052 in the unmapped gap
+	// of the CPS2 I/O map. Only the CPS-2X board maps them: the ROM selector reads 0x804054 to
+	// decide whether a team's second pick belongs to P3/P4, and the input mux honors the same
+	// value. The stock 4-player sets keep cps2_4p_map as it is (their programs never read them).
+	map(0x804054, 0x804055).lr16(NAME([this]() -> uint16_t { return vs4p_effective_playmode(); }));
+	map(0x804056, 0x804057).lw16(NAME([this](offs_t offset, uint16_t data, uint16_t mem_mask) { if (ACCESSING_BITS_0_7) m_vs4p_playmode_game = data & 0x0001; }));
 	map(0x410000, 0x5cffff).rom().region("donor2", 0x1c0000);                                                                         // CPS-2X donor #2 chip, segment 2: donor2 0x1C0000-0x37FFFF
 	map(0x620000, 0x65ffff).rom().region("mshx2", 0);                                                                                 // CPS-2X mshx growth chip: empty until a build fills it
 	map(0x710000, 0x7fffff).rom().region("mshx", 0);                                                                                  // CPS-2X mshx chip: the converted msh characters (built, plaintext)
@@ -1682,11 +1689,24 @@ void cps2_state::cps2x_qsound_sub_map(address_map &map)
 // original word table for everyone else. Control then follows the CHARACTER (P3 always drives
 // the team's second pick, through tags and duos) -- for mvsc this also supersedes the port mux
 // below, which the C++ port of the 4-live mode should disable/bypass on that set.
+// The Play Mode the board acts on. The "Play Mode" ioport (cps2_4p6b_mode / _mode2v2) is 1 bit
+// on the stock 4-player sets (0 = 1v1, 1 = 2v2). On the CPS-2X set it is 2 bits: 0 = force 1v1,
+// 1 = force 2v2, 2 = "From game settings" = whatever the game last wrote to 0x804056 (the default
+// there; a cfg saved with the old 1-bit field keeps its meaning: 0 = 1v1, 1 = 2v2). Absent
+// everywhere else (mvscduo): 1v1, the mux inert.
+uint16_t cps2_state::vs4p_effective_playmode()
+{
+	const uint16_t sw = m_vs4p_playmode.read_safe(0) & 0x0003;
+	if (sw == 2)
+		return m_vs4p_playmode_game & 0x0001;
+	return sw & 0x0001;
+}
+
 bool cps2_state::vs4p_partner_on_point(int team)
 {
 	// "Play Mode" = 1v1, or no selector on this set (mvscduo) -> P1/P2 pass through untouched.
 	// Same inert path as an unmapped gate, so a 1v1 launch is bit-for-bit the stock game.
-	if (!(m_vs4p_playmode.read_safe(0) & 0x01))
+	if (!(vs4p_effective_playmode() & 0x01))
 		return false;
 	if (!m_vs4p_gate[team])
 		return false;                       // set not mapped yet -> stay stock
@@ -2139,6 +2159,19 @@ static INPUT_PORTS_START( cps2_4p6b_mode )
 	PORT_CONFSETTING(    0x00, "1v1 (stock, 2 players)" )
 	PORT_CONFSETTING(    0x01, "2v2 (4 players)" )
 	PORT_BIT( 0xfffe, IP_ACTIVE_LOW, IPT_UNUSED )
+INPUT_PORTS_END
+
+// CPS-2X: the switch is an OVERRIDE over the game's own PLAYERS setting (test menu, EEPROM):
+// "From game settings" is the default; 1v1 / 2v2 force it for testing.
+static INPUT_PORTS_START( cps2x_mode )
+	PORT_INCLUDE(cps2_4p6b)
+
+	PORT_START("PLAYMODE")
+	PORT_CONFNAME( 0x03, 0x02, "Play Mode" )
+	PORT_CONFSETTING(    0x02, "From game settings (test menu PLAYERS)" )
+	PORT_CONFSETTING(    0x00, "1v1 (override)" )
+	PORT_CONFSETTING(    0x01, "2v2 (override)" )
+	PORT_BIT( 0xfffc, IP_ACTIVE_LOW, IPT_UNUSED )
 INPUT_PORTS_END
 
 static INPUT_PORTS_START( cps2_4p6b_mode2v2 )
@@ -11913,6 +11946,7 @@ void cps2_state::init_mvscduo() { init_cps2(); }
 void cps2_state::init_mvscextra()
 {
 	init_vs4p(0xff3800, 0xff3c00);
+	save_item(NAME(m_vs4p_playmode_game));
 	m_cps2x_ext_obj = true;
 	// Extended sprite palette pages 4-5 (object x[11:12], see cps2_render_sprites): the 16x16
 	// element is declared with 0x80 colour codes and the renderer takes the code modulo that
@@ -13774,7 +13808,7 @@ GAME( 1998, mvsc2v2,    mvsc,     cps2_4p_43, cps2_4p6b_mode2v2, cps2_state, ini
 // always. Uses the insulated cps2_4p6b_duo ports (no "Play Mode" entry, since there is no 1v1 to
 // switch to) and routes P3/P4 from its own program ROM rather than the driver mux.
 GAME( 1998, mvscduo,    mvsc,     cps2_4p_duo, cps2_4p6b_duo, cps2_state, init_mvscduo, ROT0,  "TORNOTLUKIN", "Marvel Vs. Capcom: Clash of Super Heroes Duo (widescreen)",               MACHINE_SUPPORTS_SAVE )
-GAME( 1998, mvscextra,  mvsc,     cps2x,      cps2_4p6b_mode, cps2_state, init_mvscextra, ROT0, "TORNOTLUKIN", "Marvel Vs. Capcom: Clash of Super Heroes Extra (CPS-2X expanded roster)", MACHINE_SUPPORTS_SAVE )
+GAME( 1998, mvscextra,  mvsc,     cps2x,      cps2x_mode,     cps2_state, init_mvscextra, ROT0, "TORNOTLUKIN", "Marvel Vs. Capcom: Clash of Super Heroes Extra (CPS-2X expanded roster)", MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscur1,    mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (USA 971222)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscj,      mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Japan 980123)",                       MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscjr1,    mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Japan 980112)",                       MACHINE_SUPPORTS_SAVE )
