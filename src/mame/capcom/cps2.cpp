@@ -627,6 +627,7 @@ Stephh's inputs notes (based on some tests on the "parent" set) :
 
 #include "cpu/z80/z80.h"
 #include "machine/eepromser.h"
+#include "machine/nvram.h"
 
 #include "sound/qsoundhle.h"
 #include "speaker.h"
@@ -1484,6 +1485,14 @@ void cps2_state::cps2_map(address_map &map)
 // #$7f0018` data constant each), so both are inert for the host game and for the donors.
 // Unlike ':expansion' both are ROM_REGION16_BE, like the donor chips, so the region's byte
 // order matches the space and a blit lands verbatim in the 68k view (no A^1 pair swap).
+//
+// THE TELEMETRY NVRAM (2026-10-23): 16KB of battery-backed work RAM at 0x600000-0x603FFF, in
+// the free run between donor #2's second window (ends 0x5CFFFF) and the Q RAM (0x618000). The
+// game's test menu keeps its character / support usage counters there (7 CONFIGURATION >
+// 4 TELEMETRY, tools/excise/rebaselib/telemetry.py); MAME saves it as nvram/mvscextra/telemetry
+// and reloads it at boot, like the 93C46's own file. The stock EEPROM path is untouched. A
+// decoded-instruction census of the three images finds no memory operand in the run (two
+// `#$600000` data constants, not addresses), so the region is inert for stock code.
 void cps2_state::cps2x_map(address_map &map)
 {
 	// Built on the 4-player map: the CPS-2X board carries the P3/P4 mod, with the "Play Mode"
@@ -1500,6 +1509,7 @@ void cps2_state::cps2x_map(address_map &map)
 	map(0x804054, 0x804055).lr16(NAME([this]() -> uint16_t { return vs4p_effective_playmode(); }));
 	map(0x804056, 0x804057).lw16(NAME([this](offs_t offset, uint16_t data, uint16_t mem_mask) { if (ACCESSING_BITS_0_7) m_vs4p_playmode_game = data & 0x0001; }));
 	map(0x410000, 0x5cffff).rom().region("donor2", 0x1c0000);                                                                         // CPS-2X donor #2 chip, segment 2: donor2 0x1C0000-0x37FFFF
+	map(0x600000, 0x603fff).ram().share("telemetry");                                                                                 // CPS-2X telemetry NVRAM: 16KB battery-backed work RAM (see the comment above)
 	map(0x620000, 0x65ffff).rom().region("mshx2", 0);                                                                                 // CPS-2X mshx growth chip: empty until a build fills it
 	map(0x710000, 0x7fffff).rom().region("mshx", 0);                                                                                  // CPS-2X mshx chip: the converted msh characters (built, plaintext)
 	map(0x930000, 0xd2ffff).rom().region("donor", 0);                                                                                 // CPS-2X donor chip: a whole donor program image, verbatim
@@ -2429,6 +2439,8 @@ void cps2_state::cps2x(machine_config &config)
 	// a 32MB QSound sample region.
 	m_maincpu->set_addrmap(AS_PROGRAM, &cps2_state::cps2x_map);
 	m_maincpu->set_addrmap(AS_OPCODES, &cps2_state::cps2x_opcodes_map);
+	// The telemetry NVRAM behind the 0x600000 share (see cps2x_map): zero when no file exists.
+	NVRAM(config, "telemetry", nvram_device::DEFAULT_ALL_0);
 	// Sound storage grows the same way: a 2MB ':audiocpu' region reached through a 7-bit bank
 	// register instead of a 4-bit one. See cps2x_qsound_banksw_w.
 	m_audiocpu->set_addrmap(AS_PROGRAM, &cps2_state::cps2x_qsound_sub_map);
