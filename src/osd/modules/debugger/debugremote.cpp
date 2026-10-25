@@ -414,9 +414,9 @@ void debug_remote::wait_for_debugger(device_t &device, bool firststop)
 
 		m_initialized = true;
 	}
-	else
+	else if (firststop)
 	{
-		// Check if we stopped due to a breakpoint or watchpoint
+		// Report why we stopped, once per stop: the core calls this repeatedly while stopped
 		device_debug *debug = m_debugger_console->get_visible_cpu()->debug();
 		debug_breakpoint *bp = debug->triggered_breakpoint();
 		debug_watchpoint *wp = debug->triggered_watchpoint();
@@ -444,23 +444,28 @@ void debug_remote::wait_for_debugger(device_t &device, bool firststop)
 		m_send_stop_event = false;
 	}
 
-	// Main loop — block while stopped, processing commands from TCP
-	while (m_debugger_cpu->is_stopped())
+	// One polling pass, then return. The core's own loop calls this again for as long as the
+	// machine stays stopped, and between calls it pumps the window, runs -debugscript commands
+	// and honors exit requests. Blocking here would starve all three.
+	bool handled = false;
+	std::string line;
+	while (m_debugger_cpu->is_stopped() && read_line(line))
 	{
-		std::string line;
-		if (read_line(line))
-		{
-			handle_request(line);
-		}
-		else
-		{
-			// No data available — sleep briefly to avoid 100% CPU
-			osd_sleep(osd_ticks_per_second() / 1000);
-		}
+		handle_request(line);
+		handled = true;
 	}
 
-	// Execution resumed — we'll want to send a stop event next time we stop
-	m_send_stop_event = true;
+	if (m_debugger_cpu->is_stopped())
+	{
+		// No data available: sleep briefly to avoid 100% CPU
+		if (!handled)
+			osd_sleep(osd_ticks_per_second() / 1000);
+	}
+	else
+	{
+		// Execution resumed: send a stop event next time we stop
+		m_send_stop_event = true;
+	}
 }
 
 //-------------------------------------------------------------------------
