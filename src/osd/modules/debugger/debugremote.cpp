@@ -457,6 +457,10 @@ void debug_remote::wait_for_debugger(device_t &device, bool firststop)
 
 	if (m_debugger_cpu->is_stopped())
 	{
+		// Nothing else drives the OS while the machine is stopped: pump window messages so the
+		// game window keeps responding and a close or Esc can schedule the exit
+		m_machine->osd().input_update(false);
+
 		// No data available: sleep briefly to avoid 100% CPU
 		if (!handled)
 			osd_sleep(osd_ticks_per_second() / 1000);
