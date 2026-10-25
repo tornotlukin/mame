@@ -1,0 +1,11 @@
+// license:BSD-3-Clause
+// copyright-holders:TORNOTLUKIN
+/*******************************************************************************
+    mvscextra.lst
+    Driver list for the standalone mvscextra build: only the baked release
+    set. mvscextrab is a parent set (parent 0) on this branch, so the list
+    shows the one game and nothing else.
+*******************************************************************************/
+
+@source:capcom/cps2.cpp
+mvscextrab       // Marvel Vs. Capcom: Clash of Super Heroes Extra (CPS-2X, baked release ROMs)

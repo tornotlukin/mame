@@ -13949,7 +13949,7 @@ GAME( 1998, mvsc2v2,    mvsc,     cps2_4p_43, cps2_4p6b_mode2v2, cps2_state, ini
 // switch to) and routes P3/P4 from its own program ROM rather than the driver mux.
 GAME( 1998, mvscduo,    mvsc,     cps2_4p_duo, cps2_4p6b_duo, cps2_state, init_mvscduo, ROT0,  "TORNOTLUKIN", "Marvel Vs. Capcom: Clash of Super Heroes Duo (widescreen)",               MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscextra,  mvsc,     cps2x,      cps2x_mode,     cps2_state, init_mvscextra, ROT0, "TORNOTLUKIN", "Marvel Vs. Capcom: Clash of Super Heroes Extra (CPS-2X expanded roster)", MACHINE_SUPPORTS_SAVE )
-GAME( 1998, mvscextrab, mvsc,     cps2x,      cps2x_mode,     cps2_state, init_mvscextra, ROT0, "TORNOTLUKIN", "Marvel Vs. Capcom: Clash of Super Heroes Extra (CPS-2X, baked release ROMs)", MACHINE_SUPPORTS_SAVE )
+GAME( 1998, mvscextrab, 0,        cps2x,      cps2x_mode,     cps2_state, init_mvscextra, ROT0, "TORNOTLUKIN", "Marvel Vs. Capcom: Clash of Super Heroes Extra (CPS-2X, baked release ROMs)", MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscur1,    mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (USA 971222)",                         MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscj,      mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Japan 980123)",                       MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscjr1,    mvsc,     cps2,     cps2_2p6b, cps2_state, init_cps2,     ROT0,   "Capcom", "Marvel Vs. Capcom: Clash of Super Heroes (Japan 980112)",                       MACHINE_SUPPORTS_SAVE )
