@@ -1504,6 +1504,15 @@ void cps2_state::cps2_map(address_map &map)
 // images finds eight hits in the run: immediates (data constants) and one odd-address long read
 // from a misdecoded data block, so nothing the programs execute reaches it. ERASEFF until the
 // loader probe blits `ui_convo.bin`; the baked set ROM_LOADs `mvx_convo.bin`.
+//
+// THE STATUS CHIP (2026-10-24): 12KB of plaintext ROM at 0x665000-0x667FFF, ROM_REGION16_BE like the
+// conversation chip and mapped in program AND opcodes space. It holds the STATUS lane
+// (tools/excise/rebaselib/uistatus.py): the boot screen's text (the game name, the build date, the
+// region line) and the two changelog pages shown in the WARNING and TRADEMARKS screens' slots, with
+// the three small routines that draw them. It sits in the same unmapped run as the conversation chip,
+// directly below it; 0x664002-0x664FFF stays unmapped above the add-on RAM's enable word. The census
+// of 0x664002-0x6FFFFF quoted above covers it. ERASEFF until the loader probe blits `ui_status.bin`;
+// the baked set ROM_LOADs `mvx_status.bin`.
 void cps2_state::cps2x_map(address_map &map)
 {
 	// Built on the 4-player map: the CPS-2X board carries the P3/P4 mod, with the "Play Mode"
@@ -1522,6 +1531,7 @@ void cps2_state::cps2x_map(address_map &map)
 	map(0x410000, 0x5cffff).rom().region("donor2", 0x1c0000);                                                                         // CPS-2X donor #2 chip, segment 2: donor2 0x1C0000-0x37FFFF
 	map(0x600000, 0x603fff).ram().share("telemetry");                                                                                 // CPS-2X telemetry NVRAM: 16KB battery-backed work RAM (see the comment above)
 	map(0x620000, 0x65ffff).rom().region("mshx2", 0);                                                                                 // CPS-2X mshx growth chip: empty until a build fills it
+	map(0x665000, 0x667fff).rom().region("status", 0);                                                                                // CPS-2X status chip: the boot screen and the two changelog pages (see the comment above)
 	map(0x668000, 0x6fffff).rom().region("convo", 0);                                                                                 // CPS-2X conversation chip: the match-start dialog lane (see the comment above)
 	map(0x710000, 0x7fffff).rom().region("mshx", 0);                                                                                  // CPS-2X mshx chip: the converted msh characters (built, plaintext)
 	map(0x930000, 0xd2ffff).rom().region("donor", 0);                                                                                 // CPS-2X donor chip: a whole donor program image, verbatim
@@ -1798,6 +1808,7 @@ void cps2_state::cps2x_opcodes_map(address_map &map)
 	decrypted_opcodes_map(map);
 	map(0x410000, 0x5cffff).rom().region("donor2", 0x1c0000); // CPS-2X donor #2 chip, segment 2: executable in place, unencrypted
 	map(0x620000, 0x65ffff).rom().region("mshx2", 0);         // CPS-2X mshx growth chip: executable, unencrypted
+	map(0x665000, 0x667fff).rom().region("status", 0);        // CPS-2X status chip: executable, unencrypted
 	map(0x668000, 0x6fffff).rom().region("convo", 0);         // CPS-2X conversation chip: executable, unencrypted
 	map(0x710000, 0x7fffff).rom().region("mshx", 0);          // CPS-2X mshx chip: executable, unencrypted
 	map(0x930000, 0xd2ffff).rom().region("donor", 0);         // CPS-2X donor chip: executable in place, unencrypted
@@ -6592,6 +6603,7 @@ ROM_START( mvscextra )
 	ROM_REGION16_BE( 0xf0000, "mshx", ROMREGION_ERASEFF )
 	ROM_REGION16_BE( 0x40000, "mshx2", ROMREGION_ERASEFF ) // CPS-2X mshx growth chip @0x620000
 	ROM_REGION16_BE( 0x98000, "convo", ROMREGION_ERASEFF ) // CPS-2X conversation chip @0x668000: the match-start dialog lane, blitted at runtime
+	ROM_REGION16_BE( 0x3000, "status", ROMREGION_ERASEFF ) // CPS-2X status chip @0x665000: the boot screen and the changelog pages, blitted at runtime
 
 	// CPS-2X DONOR CHIP @0x930000: mshvsf's WHOLE program image, byte-for-byte, normalised
 	// to the 68k's view by the same 16-bit swapping loader ':maincpu' uses. Donor address A
@@ -6721,6 +6733,9 @@ ROM_START( mvscextrab )
 
 	ROM_REGION16_BE( 0x98000, "convo", ROMREGION_ERASEFF )
 	ROM_LOAD16_WORD_SWAP( "mvx_convo.bin", 0x000000, 0x98000, CRC(2237f97b) SHA1(ab2da4ae903fc621d645b38e98f8251b38d8c187) )  // CPS-2X build chip
+
+	ROM_REGION16_BE( 0x3000, "status", ROMREGION_ERASEFF )
+	ROM_LOAD16_WORD_SWAP( "mvx_status.bin", 0x000000, 0x3000, CRC(90d554d1) SHA1(2af802437a35733aa3b79e3392ef9fb476c98e6a) )  // CPS-2X build chip
 
 	ROM_REGION16_BE( 0x400000, "donor", 0 )
 	ROM_LOAD16_WORD_SWAP( "mvx_mvse.03f", 0x000000, 0x80000, CRC(b72dc199) SHA1(61bd581ea4b969298f8a39fe03023b5456cac750) )  // stock mvse.03f
