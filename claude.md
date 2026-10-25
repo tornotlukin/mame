@@ -28,18 +28,32 @@ Work streams are SEPARATE branches, **all siblings based directly on the current
 | `mame-windows` | **Composition**: `llm-debugger` + `pac4eva` + `vs-4p-mod` | builds the full Windows `mame.exe` installed at `H:\mame` — MAME + debugger + all mods. THE main play/dev build |
 | `modalicious` | ⚠️ **RETIRED 2026-08-20** — see below. Do not rebuild or merge into it. | historical only |
 | `rp6-android` | **Composition**: `llm-debugger` + the game mods + MAME4droid myosd OSD overlay + Android build glue | what the Android core builds from (see `workshop-mame-android.md`) |
+| `mvscextra` | CPS-2X roster-expansion driver work (`cps2x:` commits in `cps2.cpp`), **still on mame0288**, worktree `H:\_DEV\mame-cps2x` | authored by `H:\_DEV\capcom-4play-vs` — see the other-projects table below |
+| `mvscextra-standalone` | **Composition** (2026-10-25), worktree `H:\_DEV\mame-mvscx`: mame0289 + `vs-4p-mod`'s 41 `cps2:` commits + `mvscextra`'s `cps2x:` commits (copied, not stacked) + `llm-debugger` + the `mvscextra` SUBTARGET | builds the standalone event exe in `H:\mvscextramame` (only `mvscextrab`, as a parent set on this branch only) |
 
 New commits go to the branch that owns the stream — never mix. Merge streams only in the
-composition branches (`mame-windows`, `rp6-android`).
+composition branches (`mame-windows`, `rp6-android`, `mvscextra-standalone`).
 
-### The two build artifacts, and when to rebuild each (user decision 2026-08-20)
+### The build artifacts, and when to rebuild each (user decision 2026-08-20; standalone added 2026-10-25)
 
 | Build | From | Rebuild when |
 |-------|------|--------------|
 | **`H:\mame\mame.exe`** — full MAME + debugger + mods | `mame-windows` | releases; anything you want to *play or debug* on the PC (~70 min) |
 | **MAMEalicious APK** — full MAME + mods on the RP6 | `rp6-android` | releases for the handheld (~50 min + APK; also push matching ROM zips) |
+| **`H:\mvscextramame\mvscextra.exe`** — mvscextrab only + debugger | `mvscextra-standalone` | a new mvscextra release (~16 min fresh, ~3 min incremental) |
 
-Both are FULL MAME (~50k machines) and both carry all five mods. Verify **per set** —
+**Standalone notes:**
+- `make SUBTARGET=mvscextra` (no `SOURCES=`) writes **`mamemvscextra.exe`**. Copy it into the folder renamed to `mvscextra.exe`.
+  It still reads **`mame.ini`**.
+- To carry new `mvscextra` work forward, cherry-pick its new `cps2x:` commits onto `mvscextra-standalone`. The exe's
+  `mvscextrab` checksums and the release ROMs are a matched pair, so the checksum commit has to land first.
+- The event launch keeps the debugger without halting at boot:
+  `-debug -debugger remote -debugger_port 12345 -debugscript debug\go.txt`, where `go.txt` is the one line `go`. Attach later
+  over the MCP bridge.
+- `-validate` reports 2 errors: "16-bit space references 8-bit region ':expansion'". They come from the driver's deliberate
+  8-bit `:expansion` design, are identical on the 0.288 build, and don't stop it from booting. Changing that is a game-side call.
+
+The first two are FULL MAME (~50k machines) and both carry all five mods. Verify **per set** —
 `mame.exe -verifyroms pac4eva`, then `xmvsf2v2`, `mshvsf2v2`, `mvsc2v2`, `mvscduo`. Do NOT
 use `-verifyroms "*"` on a full build; it audits the entire ROM collection and tells you
 nothing useful.
@@ -120,6 +134,7 @@ Some branches here are **written by other projects' LLM instances, not by you**:
 |--------|-----------|----------|
 | `pac4eva` | `H:\_DEV\pac-man-4ever` | the Pac-Man 4 EVA driver + its ROM_START hashes |
 | `vs-4p-mod` | `H:\_DEV\capcom-4play-vs` | the CPS2 2v2 / Duo driver mods |
+| `mvscextra` | `H:\_DEV\capcom-4play-vs` (worktree `H:\_DEV\mame-cps2x`) | the CPS-2X mvscextra / mvscextrab driver + its baked ROM checksums |
 
 Consequence: at any moment those branches may hold **commits that were never pushed**, or
 **uncommitted working-tree edits**, made outside this session. You will not have seen them.
