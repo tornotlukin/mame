@@ -13,7 +13,7 @@
   > the documented upgrade procedure (see "Upgrading to a new MAME release" below) — never
   > refuse or stall merely because the version here differs from what upstream now offers.
 - Installed play copy: **`H:\mame\mame.exe`** = full build + llm-debugger (built from this
-  tree); `H:\mame\mameold.exe` = stock backup. Curated exe: `H:\_DEV\modalicious\`.
+  tree); `H:\mame\mameold.exe` = stock backup. (`H:\_DEV\modalicious\` = retired, history only.)
 
 ## BRANCH MAP / COMMIT HYGIENE (directive 2026-07-04, split executed 2026-07-05)
 
@@ -25,20 +25,46 @@ Work streams are SEPARATE branches, **all siblings based directly on the current
 | `llm-debugger` | MCP/ addon, debugremote, debugger UI tweaks, project docs | NO game-driver changes |
 | `pac4eva` | Pac-Man 4 EVA — **one added file**, `src/mame/pacman/pac4eva.cpp` (+ its `mame.lst` line) | additions only; touches NO stock source |
 | `vs-4p-mod` | CPS2 4-player mods (`src/mame/capcom/cps2.cpp`) — xmvsf/mshvsf/mvsc 2v2 + mvscduo | pure mod, PR-able |
-| `mame-windows` | **Composition**: `llm-debugger` + `modalicious` | builds the full Windows `mame.exe` installed at `H:\mame` — MAME + debugger + all mods. THE main play/dev build |
-| `modalicious` | **Composition**: `pac4eva` + `vs-4p-mod` + the Modalicious subtarget (`src/mame/modalicious.lst`, `scripts/target/mame/modalicious.lua`) | builds `mamemodalicious.exe` — the curated mods-only exe |
+| `mame-windows` | **Composition**: `llm-debugger` + `pac4eva` + `vs-4p-mod` | builds the full Windows `mame.exe` installed at `H:\mame` — MAME + debugger + all mods. THE main play/dev build |
+| `modalicious` | ⚠️ **RETIRED 2026-08-20** — see below. Do not rebuild or merge into it. | historical only |
 | `rp6-android` | **Composition**: `llm-debugger` + the game mods + MAME4droid myosd OSD overlay + Android build glue | what the Android core builds from (see `workshop-mame-android.md`) |
+| `mvscextra` | CPS-2X roster-expansion driver work (`cps2x:` commits in `cps2.cpp`), **still on mame0288**, worktree `H:\_DEV\mame-cps2x` | authored by `H:\_DEV\capcom-4play-vs` — see the other-projects table below |
+| `mvscextra-standalone` | **Composition** (2026-10-25), worktree `H:\_DEV\mame-mvscx`: mame0289 + `vs-4p-mod`'s 41 `cps2:` commits + `mvscextra`'s `cps2x:` commits (copied, not stacked) + `llm-debugger` + the `mvscextra` SUBTARGET | builds the standalone event exe in `H:\mvscextramame` (only `mvscextrab`, as a parent set on this branch only) |
 
 New commits go to the branch that owns the stream — never mix. Merge streams only in the
-composition branches (`mame-windows`, `modalicious`, `rp6-android`).
+composition branches (`mame-windows`, `rp6-android`, `mvscextra-standalone`).
 
-### The three build artifacts, and when to rebuild each (user decision 2026-08-09)
+### The build artifacts, and when to rebuild each (user decision 2026-08-20; standalone added 2026-10-25)
 
 | Build | From | Rebuild when |
 |-------|------|--------------|
-| **`H:\mame\mame.exe`** — full MAME + debugger + mods | `mame-windows` | releases; anything you want to *play or debug* on the PC (~40 min) |
-| **MAMEalicious APK** — full MAME on the RP6 | `rp6-android` | releases for the handheld (~40 min + APK; also push matching ROM zips) |
-| **`H:\_DEV\modalicious\modalicious.exe`** — curated 5-game "mod cabinet" | `modalicious` | **dev/showcase only — NOT every release.** Use it while iterating on mods: ~3 min build, and `-verifyroms "*"` gives a crisp 7/7 over exactly the five mod sets (the full build's audit is drowned in 42k machines) |
+| **`H:\mame\mame.exe`** — full MAME + debugger + mods | `mame-windows` | releases; anything you want to *play or debug* on the PC (~70 min) |
+| **MAMEalicious APK** — full MAME + mods on the RP6 | `rp6-android` | releases for the handheld (~50 min + APK; also push matching ROM zips) |
+| **`H:\mvscextramame\mvscextra.exe`** — mvscextrab only + debugger | `mvscextra-standalone` | a new mvscextra release (~16 min fresh, ~3 min incremental) |
+
+**Standalone notes:**
+- `make SUBTARGET=mvscextra` (no `SOURCES=`) writes **`mamemvscextra.exe`**. Copy it into the folder renamed to `mvscextra.exe`.
+  It still reads **`mame.ini`**.
+- To carry new `mvscextra` work forward, cherry-pick its new `cps2x:` commits onto `mvscextra-standalone`. The exe's
+  `mvscextrab` checksums and the release ROMs are a matched pair, so the checksum commit has to land first.
+- The event launch keeps the debugger without halting at boot:
+  `-debug -debugger remote -debugger_port 12345 -debugscript debug\go.txt`, where `go.txt` is the one line `go`. Attach later
+  over the MCP bridge.
+- `-validate` reports 2 errors: "16-bit space references 8-bit region ':expansion'". They come from the driver's deliberate
+  8-bit `:expansion` design, are identical on the 0.288 build, and don't stop it from booting. Changing that is a game-side call.
+
+The first two are FULL MAME (~50k machines) and both carry all five mods. Verify **per set** —
+`mame.exe -verifyroms pac4eva`, then `xmvsf2v2`, `mshvsf2v2`, `mvsc2v2`, `mvscduo`. Do NOT
+use `-verifyroms "*"` on a full build; it audits the entire ROM collection and tells you
+nothing useful.
+
+> **⚠️ Modalicious is SUNSET (2026-08-20).** It existed only because the curated subtarget
+> built in ~3 min and gave a crisp 7/7 audit while the full build's audit drowned in 42k
+> machines. Both shipping builds now carry the mods and verify cleanly per set, so the
+> curated exe earns nothing. **Do not rebuild it, do not merge mod updates into it, and do
+> not treat its stale ROM hashes as a bug.** The `modalicious` branch,
+> `src/mame/modalicious.lst`, `scripts/target/mame/modalicious.lua` and
+> `H:\_DEV\modalicious\` are kept as history only.
 
 `mame-windows` deliberately does NOT come from `rp6-android` — that branch's myosd/netplay core
 patches would leave undefined symbols in a non-Android build.
@@ -74,9 +100,11 @@ that avoids the traps we actually hit.
    > This is safe because the debugger (`MCP/`, `src/osd/**`) and the game mods
    > (`src/mame/**`) touch DISJOINT files — verified; compositions merge conflict-free.
 5. **REBUILD the composition branches, don't rebase them** (they are merge-shaped):
-   recreate `modalicious` / `rp6-android` from the rebased sources + their own unique commits.
-6. **Verify before pushing:** build Modalicious → `modalicious.exe -verifyroms "*"` must be
-   7/7; build the Android core + APK. Only then force-push (backups still exist).
+   recreate `mame-windows` / `rp6-android` from the rebased sources + their own unique
+   commits. (`modalicious` is retired — skip it.)
+6. **Verify before pushing:** build the Windows exe → install to `H:\mame` → each of the
+   five mod sets must pass `-verifyroms` individually; build the Android core + APK. Only
+   then force-push (backups still exist).
 7. **Update this file's base-tag line** (top of Repo/Remotes) to the new tag.
 
 Conflict style seen in practice: upstream refactors (e.g. `metrics()` → a local `metrics`
@@ -106,6 +134,7 @@ Some branches here are **written by other projects' LLM instances, not by you**:
 |--------|-----------|----------|
 | `pac4eva` | `H:\_DEV\pac-man-4ever` | the Pac-Man 4 EVA driver + its ROM_START hashes |
 | `vs-4p-mod` | `H:\_DEV\capcom-4play-vs` | the CPS2 2v2 / Duo driver mods |
+| `mvscextra` | `H:\_DEV\capcom-4play-vs` (worktree `H:\_DEV\mame-cps2x`) | the CPS-2X mvscextra / mvscextrab driver + its baked ROM checksums |
 
 Consequence: at any moment those branches may hold **commits that were never pushed**, or
 **uncommitted working-tree edits**, made outside this session. You will not have seen them.
@@ -169,6 +198,38 @@ Self-contained addon code lives under `MCP/` (see `MCP/README.md` and
 - `MCP/docs/llm-debugger-reference.md` — debugger syntax reference for the LLM
 - `MCP/launch/start_debugger.bat` — Windows launcher
 - `.mcp.json` — at repo root (Claude Code discovers it); points to `MCP/bridge/mcp_server.py`
+
+### Making the MCP work on EVERY branch (set up 2026-09-08)
+
+`MCP/` **and** `.mcp.json` are both branch-tracked, so checking out a pure mod branch
+(`pac4eva`, `vs-4p-mod`) deletes the server config *and* the script — Claude then reports
+`mame-debugger (CONNECTION_CLOSED)`. That is a dead path, not a MAME/TCP problem; it never
+reaches port 12345.
+
+The fix, in place now — **a branch-independent fallback**:
+
+- **Deployed copy:** `H:\_DEV\mame-mcp\bridge\` — a plain copy of `MCP/bridge/`, outside any
+  worktree, so no checkout can remove it. The bridge sets `sys.path` from `__file__`, so it
+  runs from anywhere.
+- **User-scope registration** (in `~/.claude.json`, NOT git-tracked, applies to every project
+  and branch):
+  `claude mcp add mame-debugger -s user -e MAME_DEBUG_HOST=localhost -e MAME_DEBUG_PORT=12345 -- python H:/_DEV/mame-mcp/bridge/mcp_server.py`
+- **Precedence:** where `.mcp.json` exists (`llm-debugger`, `mame-windows`, `rp6-android`)
+  the project entry wins and its relative path resolves, because `MCP/` is present there.
+  On branches without it, the user-scope entry takes over. Nothing in git changed.
+- **After editing `MCP/bridge/`, refresh the deployed copy** or the fallback runs stale code:
+  `cp MCP/bridge/*.py MCP/bridge/requirements.txt /h/_DEV/mame-mcp/bridge/`
+
+⚠️ **MCP access is only half of debugging a mod.** The exe must also contain `debugremote`,
+and the pure mod branches do NOT have it (`pac4eva` and `vs-4p-mod` carry 0 debugremote
+files). **Debug against `H:\mame\mame.exe`** — built from `mame-windows`, so it has the
+debugger *and* all five mods. Never expect to debug a build made from a bare mod branch.
+
+⚠️ **Ancestry is not content.** `git merge-base --is-ancestor llm-debugger <branch>` answers
+"did history flow through it", never "does this branch contain the debugger". Code arrives
+via cherry-pick or rebase with the ancestry link dropped — `mvscextra` fails the ancestry
+test yet carries debugremote blobs identical to `llm-debugger`'s. Measure the artifact:
+`ls-tree | grep debugremote`, or `<exe> -showusage | grep debugger_port`.
 
 Core-MAME touch-points (kept in the source tree because they compile into `mame.exe`):
 
