@@ -28,8 +28,8 @@ Work streams are SEPARATE branches, **all siblings based directly on the current
 | `mame-windows` | **Composition**: `llm-debugger` + `pac4eva` + `vs-4p-mod` | builds the full Windows `mame.exe` installed at `H:\mame` — MAME + debugger + all mods. THE main play/dev build |
 | `modalicious` | ⚠️ **RETIRED 2026-08-20** — see below. Do not rebuild or merge into it. | historical only |
 | `rp6-android` | **Composition**: `llm-debugger` + the game mods + MAME4droid myosd OSD overlay + Android build glue | what the Android core builds from (see `workshop-mame-android.md`) |
-| `mvscextra` | CPS-2X roster-expansion driver work (`cps2x:` commits in `cps2.cpp`), **still on mame0288**, worktree `H:\_DEV\mame-cps2x` | authored by `H:\_DEV\capcom-4play-vs` — see the other-projects table below |
-| `mvscextra-standalone` | **Composition** (2026-10-25), worktree `H:\_DEV\mame-mvscx`: mame0289 + `vs-4p-mod`'s 41 `cps2:` commits + `mvscextra`'s `cps2x:` commits (copied, not stacked) + `llm-debugger` + the `mvscextra` SUBTARGET | builds the standalone event exe in `H:\mvscextramame` (only `mvscextrab`, as a parent set on this branch only) |
+| `mvscextra` | CPS-2X roster-expansion driver work (`cps2x:` commits in `cps2.cpp`), worktree `H:\_DEV\mame-cps2x`. On **mame0289** via a merge of `llm-debugger` (2e4182fedf5, 2026-10-26), which also gives it the current debugger. It takes later debugger fixes by merging `llm-debugger`. The 0.288 history is tag `backup-mame0288/mvscextra`. Builds `cps2test.exe`, the project's dev exe and release.py's verify exe | authored by `H:\_DEV\capcom-4play-vs` — see the other-projects table below |
+| `mvscextra-standalone` | **Composition** (2026-10-25), worktree `H:\_DEV\mame-mvscx`: `mvscextra`'s game code on mame0289 + `llm-debugger` + the `mvscextra` SUBTARGET (`f4dd59adf8d`) | builds the standalone event exe in `H:\mvscextramame` (only `mvscextrab`, as a parent set on this branch only) |
 
 New commits go to the branch that owns the stream — never mix. Merge streams only in the
 composition branches (`mame-windows`, `rp6-android`, `mvscextra-standalone`).
@@ -45,8 +45,10 @@ composition branches (`mame-windows`, `rp6-android`, `mvscextra-standalone`).
 **Standalone notes:**
 - `make SUBTARGET=mvscextra` (no `SOURCES=`) writes **`mamemvscextra.exe`**. Copy it into the folder renamed to `mvscextra.exe`.
   It still reads **`mame.ini`**.
-- To carry new `mvscextra` work forward, cherry-pick its new `cps2x:` commits onto `mvscextra-standalone`. The exe's
-  `mvscextrab` checksums and the release ROMs are a matched pair, so the checksum commit has to land first.
+- To carry new `mvscextra` work forward, **merge `mvscextra` into `mvscextra-standalone`**. Both are on 0.289, and
+  `git diff mvscextra mvscextra-standalone` should then show only `f4dd59adf8d`'s files (`mvscextra.lua`, `mvscextra.lst`) plus
+  the parent-0 line. The exe's `mvscextrab` checksums and the release ROMs are a matched pair. The capcom project's release step
+  (`tools/excise/chains/standalone_rebuild.sh`) re-applies the release's checksum block, commits it, rebuilds and stages the exe.
 - The event launch keeps the debugger without halting at boot:
   `-debug -debugger remote -debugger_port 12345 -debugscript debug\go.txt`, where `go.txt` is the one line `go`. Attach later
   over the MCP bridge.
@@ -227,8 +229,8 @@ debugger *and* all five mods. Never expect to debug a build made from a bare mod
 
 ⚠️ **Ancestry is not content.** `git merge-base --is-ancestor llm-debugger <branch>` answers
 "did history flow through it", never "does this branch contain the debugger". Code arrives
-via cherry-pick or rebase with the ancestry link dropped — `mvscextra` fails the ancestry
-test yet carries debugremote blobs identical to `llm-debugger`'s. Measure the artifact:
+via cherry-pick or rebase with the ancestry link dropped — tag `backup-mame0288/mvscextra` fails the
+ancestry test yet carries debugremote blobs identical to `llm-debugger`'s. Measure the artifact:
 `ls-tree | grep debugremote`, or `<exe> -showusage | grep debugger_port`.
 
 Core-MAME touch-points (kept in the source tree because they compile into `mame.exe`):
@@ -237,6 +239,8 @@ Core-MAME touch-points (kept in the source tree because they compile into `mame.
 - `src/osd/modules/lib/osdobj_common.cpp` — Module registration (modified, +1 line)
 - `scripts/src/osd/modules.lua` — Build config (modified, +2 lines)
 - `src/osd/modules/debugger/debugwin.cpp`, `win/debugviewinfo.{cpp,h}` — Win32 UI text-selection feature (modified)
+- `src/osd/windows/window.{cpp,h}`, `video.cpp` — `winwindow_debugger_needs_window()`: `-debug` forces windowed mode only
+  for a debugger with its own windows, so `-debugger remote` / `gdbstub` / `none` can run full screen (modified)
 
 ## Key Source References
 
