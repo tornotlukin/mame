@@ -193,6 +193,7 @@ private:
 bool winwindow_has_focus(void);
 void winwindow_update_cursor_state(running_machine &machine);
 
+bool winwindow_debugger_needs_window(running_machine &machine);
 void winwindow_toggle_full_screen(void);
 void winwindow_take_snap(void);
 void winwindow_take_video(void);
