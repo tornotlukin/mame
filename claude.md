@@ -24,12 +24,13 @@ Work streams are SEPARATE branches, **all siblings based directly on the current
 |--------|----------|------|
 | `llm-debugger` | MCP/ addon, debugremote, debugger UI tweaks, project docs | NO game-driver changes |
 | `pac4eva` | Pac-Man 4 EVA — **one added file**, `src/mame/pacman/pac4eva.cpp` (+ its `mame.lst` line) | additions only; touches NO stock source |
-| `vs-4p-mod` | CPS2 4-player mods (`src/mame/capcom/cps2.cpp`) — xmvsf/mshvsf/mvsc 2v2 + mvscduo | pure mod, PR-able |
-| `mame-windows` | **Composition**: `llm-debugger` + `pac4eva` + `vs-4p-mod` | builds the full Windows `mame.exe` installed at `H:\mame` — MAME + debugger + all mods. THE main play/dev build |
+| `cps2x` | **The CPS-2X drop-in driver** (2026-10-26): `src/mame/capcom/cps2x.cpp` + `qsoundx.cpp/.h` + its `mame.lst` block. A self-contained copy of the CPS2 driver with every CPS2 mod: the 4-player 2v2 sets (`xmvsf2v2`, `mshvsf2v2`, `mvsc2v2`), `mvscduo`, `mvscextra`, `mvscextrab`, all clones of the stock sets | additions only; touches NO stock source. Synced from `mvscextra` in one commit per release |
+| `vs-4p-mod` | ⚠️ **RETIRED 2026-10-26**: its 4-player work lives in `cps2x.cpp`. Tag `retired/vs-4p-mod` | historical only |
+| `mame-windows` | **Composition**: `llm-debugger` + `pac4eva` + `cps2x` | builds the full Windows `mame.exe` installed at `H:\mame` — MAME + debugger + all mods. THE main play/dev build |
 | `modalicious` | ⚠️ **RETIRED 2026-08-20** — see below. Do not rebuild or merge into it. | historical only |
 | `rp6-android` | **Composition**: `llm-debugger` + the game mods + MAME4droid myosd OSD overlay + Android build glue | what the Android core builds from (see `workshop-mame-android.md`) |
-| `mvscextra` | CPS-2X roster-expansion driver work (`cps2x:` commits in `cps2.cpp`), worktree `H:\_DEV\mame-cps2x`. On **mame0289** via a merge of `llm-debugger` (2e4182fedf5, 2026-10-26), which also gives it the current debugger. It takes later debugger fixes by merging `llm-debugger`. The 0.288 history is tag `backup-mame0288/mvscextra`. Builds `cps2test.exe`, the project's dev exe and release.py's verify exe | authored by `H:\_DEV\capcom-4play-vs` — see the other-projects table below |
-| `mvscextra-standalone` | **Composition** (2026-10-25), worktree `H:\_DEV\mame-mvscx`: `mvscextra`'s game code on mame0289 + `llm-debugger` + the `mvscextra` SUBTARGET (`f4dd59adf8d`) | builds the standalone event exe in `H:\mvscextramame` (only `mvscextrab`, as a parent set on this branch only) |
+| `mvscextra` | CPS-2X roster-expansion driver work (`cps2x:` commits in `src/mame/capcom/cps2x.cpp`; stock `cps2.cpp` stays upstream), worktree `H:\_DEV\mame-cps2x`. On **mame0289** via a merge of `llm-debugger` (2e4182fedf5, 2026-10-26), which also gives it the current debugger. It takes later debugger fixes by merging `llm-debugger`. The 0.288 history is tag `backup-mame0288/mvscextra`. Builds `cps2test.exe`, the project's dev exe and release.py's verify exe | authored by `H:\_DEV\capcom-4play-vs` — see the other-projects table below |
+| `mvscextra-standalone` | **Composition** (2026-10-25), worktree `H:\_DEV\mame-mvscx`: `cps2x` + `llm-debugger` + the `mvscextra` SUBTARGET (`f4dd59adf8d`, retargeted to `cps2x.cpp` in `5005114028f`) | builds the standalone event exe in `H:\mvscextramame` (only `mvscextrab`, as a parent set on this branch only) |
 
 New commits go to the branch that owns the stream — never mix. Merge streams only in the
 composition branches (`mame-windows`, `rp6-android`, `mvscextra-standalone`).
@@ -45,9 +46,8 @@ composition branches (`mame-windows`, `rp6-android`, `mvscextra-standalone`).
 **Standalone notes:**
 - `make SUBTARGET=mvscextra` (no `SOURCES=`) writes **`mamemvscextra.exe`**. Copy it into the folder renamed to `mvscextra.exe`.
   It still reads **`mame.ini`**.
-- To carry new `mvscextra` work forward, **merge `mvscextra` into `mvscextra-standalone`**. Both are on 0.289, and
-  `git diff mvscextra mvscextra-standalone` should then show only `f4dd59adf8d`'s files (`mvscextra.lua`, `mvscextra.lst`) plus
-  the parent-0 line. The exe's `mvscextrab` checksums and the release ROMs are a matched pair. The capcom project's release step
+- To carry new `mvscextra` work forward, sync it into `cps2x` (one commit), then **merge `cps2x` into `mvscextra-standalone`**.
+  `git diff cps2x mvscextra-standalone -- src/mame` should then show only `mvscextra.lst` plus the parent-0 line in `cps2x.cpp`. The exe's `mvscextrab` checksums and the release ROMs are a matched pair. The capcom project's release step
   (`tools/excise/chains/standalone_rebuild.sh`) re-applies the release's checksum block, commits it, rebuilds and stages the exe.
 - The event launch keeps the debugger without halting at boot:
   `-debug -debugger remote -debugger_port 12345 -debugscript debug\go.txt`, where `go.txt` is the one line `go`. Attach later
@@ -55,8 +55,8 @@ composition branches (`mame-windows`, `rp6-android`, `mvscextra-standalone`).
 - `-validate` reports 2 errors: "16-bit space references 8-bit region ':expansion'". They come from the driver's deliberate
   8-bit `:expansion` design, are identical on the 0.288 build, and don't stop it from booting. Changing that is a game-side call.
 
-The first two are FULL MAME (~50k machines) and both carry all five mods. Verify **per set** —
-`mame.exe -verifyroms pac4eva`, then `xmvsf2v2`, `mshvsf2v2`, `mvsc2v2`, `mvscduo`. Do NOT
+The first two are FULL MAME (~50k machines) and both carry all the mods. Verify **per set** —
+`mame.exe -verifyroms pac4eva`, then `xmvsf2v2`, `mshvsf2v2`, `mvsc2v2`, `mvscduo`, `mvscextra`, `mvscextrab`. Do NOT
 use `-verifyroms "*"` on a full build; it audits the entire ROM collection and tells you
 nothing useful.
 
@@ -71,9 +71,10 @@ nothing useful.
 `mame-windows` deliberately does NOT come from `rp6-android` — that branch's myosd/netplay core
 patches would leave undefined symbols in a non-Android build.
 
-> **2026-08-09 restructure:** `vs-4p-mod` used to be *stacked on* `llm-debugger`; it is now a
-> plain sibling of the base tag (pure `cps2.cpp` only). Keep it that way — see the upgrade
-> section for why stacking hurts.
+> **2026-10-26 split:** the CPS2 mods moved out of stock `cps2.cpp` into the `cps2x` drop-in
+> (user ruling: no edits to stock files; an easy way to add the drivers). Stock `xmvsf` /
+> `mshvsf` / `mvsc` are 2-player again; the 4-player games are the `*2v2` clones. Keep every
+> source branch a sibling of the base tag — see the upgrade section for why stacking hurts.
 
 Build note: `pac4eva.exe` (the exe the game project launches) is built from THIS tree via
 the game repo's `tools/build_mame.sh` — **whichever branch is checked out is what it
@@ -92,7 +93,10 @@ that avoids the traps we actually hit.
    an unknown into a short list of expected conflicts (0.289: only 2 files conflicted).
 3. **Backup every branch first:** `git tag -f backup-<oldtag>/<branch> <branch>`. Non-negotiable.
 4. **Rebase each SOURCE branch** onto the new tag:
-   `git rebase --onto <newtag> <oldtag> <branch>` — do `llm-debugger`, `pac4eva`, `vs-4p-mod`.
+   `git rebase --onto <newtag> <oldtag> <branch>` — do `llm-debugger`, `pac4eva`, `cps2x`.
+   `cps2x.cpp` / `qsoundx.*` are COPIES of stock files: also port upstream's
+   `git diff <oldtag> <newtag> -- src/mame/capcom/cps2.cpp src/devices/sound/qsoundhle.*` into them
+   (0.289: 9 cosmetic lines in cps2.cpp, none in qsoundhle).
    Branches are siblings, so order does not matter and conflicts stay isolated per branch.
    > **TRAP (cost us a false start):** if a branch was ever *stacked* on another (vs-4p-mod
    > used to sit on llm-debugger), rebasing it onto the tag replays the parent's commits too
@@ -105,7 +109,7 @@ that avoids the traps we actually hit.
    recreate `mame-windows` / `rp6-android` from the rebased sources + their own unique
    commits. (`modalicious` is retired — skip it.)
 6. **Verify before pushing:** build the Windows exe → install to `H:\mame` → each of the
-   five mod sets must pass `-verifyroms` individually; build the Android core + APK. Only
+   mod sets must pass `-verifyroms` individually; build the Android core + APK. Only
    then force-push (backups still exist).
 7. **Update this file's base-tag line** (top of Repo/Remotes) to the new tag.
 
@@ -135,8 +139,8 @@ Some branches here are **written by other projects' LLM instances, not by you**:
 | Branch | Driven by | Contains |
 |--------|-----------|----------|
 | `pac4eva` | `H:\_DEV\pac-man-4ever` | the Pac-Man 4 EVA driver + its ROM_START hashes |
-| `vs-4p-mod` | `H:\_DEV\capcom-4play-vs` | the CPS2 2v2 / Duo driver mods |
-| `mvscextra` | `H:\_DEV\capcom-4play-vs` (worktree `H:\_DEV\mame-cps2x`) | the CPS-2X mvscextra / mvscextrab driver + its baked ROM checksums |
+| `mvscextra` | `H:\_DEV\capcom-4play-vs` (worktree `H:\_DEV\mame-cps2x`) | `cps2x.cpp`: the CPS-2X mvscextra / mvscextrab driver + its baked ROM checksums, and the 2v2 / Duo sets |
+| `cps2x` | synced from `mvscextra` | the drop-in files only |
 
 Consequence: at any moment those branches may hold **commits that were never pushed**, or
 **uncommitted working-tree edits**, made outside this session. You will not have seen them.
@@ -204,7 +208,7 @@ Self-contained addon code lives under `MCP/` (see `MCP/README.md` and
 ### Making the MCP work on EVERY branch (set up 2026-09-08)
 
 `MCP/` **and** `.mcp.json` are both branch-tracked, so checking out a pure mod branch
-(`pac4eva`, `vs-4p-mod`) deletes the server config *and* the script — Claude then reports
+(`pac4eva`, `cps2x`) deletes the server config *and* the script — Claude then reports
 `mame-debugger (CONNECTION_CLOSED)`. That is a dead path, not a MAME/TCP problem; it never
 reaches port 12345.
 
@@ -223,9 +227,9 @@ The fix, in place now — **a branch-independent fallback**:
   `cp MCP/bridge/*.py MCP/bridge/requirements.txt /h/_DEV/mame-mcp/bridge/`
 
 ⚠️ **MCP access is only half of debugging a mod.** The exe must also contain `debugremote`,
-and the pure mod branches do NOT have it (`pac4eva` and `vs-4p-mod` carry 0 debugremote
+and the pure mod branches do NOT have it (`pac4eva` and `cps2x` carry 0 debugremote
 files). **Debug against `H:\mame\mame.exe`** — built from `mame-windows`, so it has the
-debugger *and* all five mods. Never expect to debug a build made from a bare mod branch.
+debugger *and* all the mods. Never expect to debug a build made from a bare mod branch.
 
 ⚠️ **Ancestry is not content.** `git merge-base --is-ancestor llm-debugger <branch>` answers
 "did history flow through it", never "does this branch contain the debugger". Code arrives
