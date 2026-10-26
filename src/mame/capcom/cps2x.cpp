@@ -2806,4 +2806,4 @@ GAME( 1997, mshvsf2v2,  mshvsf, cps2_4p_43,  cps2_4p6b_mode2v2, cps2x_state, ini
 GAME( 1998, mvsc2v2,    mvsc,   cps2_4p_43,  cps2_4p6b_mode2v2, cps2x_state, init_mvsc2v2_4p, ROT0, "TORNOTLUKIN", "Marvel Vs. Capcom: Clash of Super Heroes 2v2 (all characters)", MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscduo,    mvsc,   cps2_4p_duo, cps2_4p6b_duo,     cps2x_state, init_mvscduo,    ROT0, "TORNOTLUKIN", "Marvel Vs. Capcom: Clash of Super Heroes Duo (widescreen)", MACHINE_SUPPORTS_SAVE )
 GAME( 1998, mvscextra,  mvsc,   cps2x,       cps2x_mode,        cps2x_state, init_mvscextra,  ROT0, "TORNOTLUKIN", "Marvel Vs. Capcom: Clash of Super Heroes Extra (CPS-2X expanded roster)", MACHINE_SUPPORTS_SAVE )
-GAME( 1998, mvscextrab, mvsc,   cps2x,       cps2x_mode,        cps2x_state, init_mvscextra,  ROT0, "TORNOTLUKIN", "Marvel Vs. Capcom: Clash of Super Heroes Extra (CPS-2X, baked release ROMs)", MACHINE_SUPPORTS_SAVE )
+GAME( 1998, mvscextrab, 0,      cps2x,       cps2x_mode,        cps2x_state, init_mvscextra,  ROT0, "TORNOTLUKIN", "Marvel Vs. Capcom: Clash of Super Heroes Extra (CPS-2X, baked release ROMs)", MACHINE_SUPPORTS_SAVE )

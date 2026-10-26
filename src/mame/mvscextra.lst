@@ -7,5 +7,5 @@
     shows the one game and nothing else.
 *******************************************************************************/
 
-@source:capcom/cps2.cpp
+@source:capcom/cps2x.cpp
 mvscextrab       // Marvel Vs. Capcom: Clash of Super Heroes Extra (CPS-2X, baked release ROMs)
