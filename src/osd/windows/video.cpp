@@ -160,8 +160,8 @@ void windows_osd_interface::extract_video_config()
 	video_config.filter        = options().filter();
 	video_config.numscreens    = options().numscreens();
 
-	// if we are in debug mode, never go full screen
-	if (machine().debug_flags & DEBUG_FLAG_OSD_ENABLED)
+	// a debugger with its own windows needs the game windowed beside it
+	if (winwindow_debugger_needs_window(machine()))
 		video_config.windowed = TRUE;
 
 	// per-window options: extract the data
