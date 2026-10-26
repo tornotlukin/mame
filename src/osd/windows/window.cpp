@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstring>
+#include <string_view>
 
 // MAME headers
 #include "emu.h"
@@ -657,6 +658,21 @@ void winwindow_take_video()
 
 
 //============================================================
+//  winwindow_debugger_needs_window
+//  True when the debugger is on and draws its own windows on this desktop, which a full-screen game would cover.
+//  The remote, gdbstub and none debuggers have no on-screen UI, so they leave full screen available.
+//============================================================
+
+bool winwindow_debugger_needs_window(running_machine &machine)
+{
+	if (!(machine.debug_flags & DEBUG_FLAG_OSD_ENABLED))
+		return false;
+	std::string_view const debugger = downcast<windows_options &>(machine.options()).debugger();
+	return debugger != "remote" && debugger != "gdbstub" && debugger != "none";
+}
+
+
+//============================================================
 //  winwindow_toggle_full_screen
 //  (main thread)
 //============================================================
@@ -665,10 +681,10 @@ void winwindow_toggle_full_screen()
 {
 	assert(GetCurrentThreadId() == main_threadid);
 
-	// if we are in debug mode, never go full screen
+	// a debugger with its own windows needs the game windowed beside it
 	for (const auto &window : osd_common_t::window_list())
 	{
-		if (window->machine().debug_flags & DEBUG_FLAG_OSD_ENABLED)
+		if (winwindow_debugger_needs_window(window->machine()))
 			return;
 	}
 
