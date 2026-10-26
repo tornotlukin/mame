@@ -16342,7 +16342,6 @@ mshvsfh
 mshvsfj
 mshvsfj1
 mshvsfj2
-mshvsf2v2
 mshvsfu
 mshvsfu1
 mshvsfu1d
@@ -16356,10 +16355,6 @@ mvscjr1
 mvscjsing
 mvscr1
 mvscu
-mvsc2v2
-mvscduo
-mvscextra
-mvscextrab
 mvscud
 mvscur1
 nwarr
@@ -16532,6 +16527,14 @@ xmvsfu
 xmvsfu1d
 xmvsfur1
 xmvsfur2
+
+@source:capcom/cps2x.cpp
+mshvsf2v2
+mvsc2v2
+mvscduo
+mvscextra
+mvscextrab
+xmvsf2v2
 
 @source:capcom/cps3.cpp
 cps3boot
