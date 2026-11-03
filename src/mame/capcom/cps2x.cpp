@@ -1371,11 +1371,11 @@ void cps2x_state::cps2_map(address_map &map)
 // precedent of a whole verbatim image:
 //
 //   0x710000-0x7FFFFF  "mshx"   960KB  the converted msh characters (code + data)
-//   0x620000-0x65FFFF  "mshx2"  256KB  growth window, empty until a build fills it
+//   0x620000-0x65FFFF  "mshx2"  256KB  UI lanes (telemetry, colorways, team art, mugshot hook, VS art, name records)
 //
 // 0x710000 is the first byte above the object-RAM mirror (0x708000 + mirror 0x6000 ends at
 // 0x70FFFF) and 0x7FFFFF the last below the CPS-A register mirror at 0x800100, so ':mshx'
-// is the whole hole. The growth window sits above the Q RAM (0x618000-0x619FFF) and below
+// is the whole hole. The mshx2 window sits above the Q RAM (0x618000-0x619FFF) and below
 // the add-on RAM at 0x660000; the comm-device registers at 0x620000-0x620021 exist only on
 // cps2_comm_map, which this board does not use. A decoded-instruction census of mvsc,
 // mshvsf and xmvsf found no address-shaped reference into either window (one `ori.l
@@ -1427,7 +1427,7 @@ void cps2x_state::cps2x_map(address_map &map)
 	map(0x804056, 0x804057).lw16(NAME([this](offs_t offset, uint16_t data, uint16_t mem_mask) { if (ACCESSING_BITS_0_7) m_vs4p_playmode_game = data & 0x0001; }));
 	map(0x410000, 0x5cffff).rom().region("donor2", 0x1c0000);                                                                         // CPS-2X donor #2 chip, segment 2: donor2 0x1C0000-0x37FFFF
 	map(0x600000, 0x603fff).ram().share("telemetry");                                                                                 // CPS-2X telemetry NVRAM: 16KB battery-backed work RAM (see the comment above)
-	map(0x620000, 0x65ffff).rom().region("mshx2", 0);                                                                                 // CPS-2X mshx growth chip: empty until a build fills it
+	map(0x620000, 0x65ffff).rom().region("mshx2", 0);                                                                                 // CPS-2X mshx2 chip: the UI lanes
 	map(0x665000, 0x667fff).rom().region("status", 0);                                                                                // CPS-2X status chip: the boot screen and the two changelog pages (see the comment above)
 	map(0x668000, 0x6fffff).rom().region("convo", 0);                                                                                 // CPS-2X conversation chip: the match-start dialog lane (see the comment above)
 	map(0x710000, 0x7fffff).rom().region("mshx", 0);                                                                                  // CPS-2X mshx chip: the converted msh characters (built, plaintext)
@@ -1710,7 +1710,7 @@ void cps2x_state::cps2x_opcodes_map(address_map &map)
 {
 	decrypted_opcodes_map(map);
 	map(0x410000, 0x5cffff).rom().region("donor2", 0x1c0000); // CPS-2X donor #2 chip, segment 2: executable in place, unencrypted
-	map(0x620000, 0x65ffff).rom().region("mshx2", 0);         // CPS-2X mshx growth chip: executable, unencrypted
+	map(0x620000, 0x65ffff).rom().region("mshx2", 0);         // CPS-2X mshx2 chip (UI lanes): executable, unencrypted
 	map(0x665000, 0x667fff).rom().region("status", 0);        // CPS-2X status chip: executable, unencrypted
 	map(0x668000, 0x6fffff).rom().region("convo", 0);         // CPS-2X conversation chip: executable, unencrypted
 	map(0x710000, 0x7fffff).rom().region("mshx", 0);          // CPS-2X mshx chip: executable, unencrypted
@@ -2401,14 +2401,14 @@ ROM_END
 // a build product like the expansion, never a verbatim msh image:
 //
 //   "mshx"   960KB  converted msh characters, code + data   -> 68k 0x710000-0x7FFFFF
-//   "mshx2"  256KB  growth window, empty until a build fills it -> 68k 0x620000-0x65FFFF
+//   "mshx2"  256KB  UI lanes (telemetry, colorways, team art, mugshot hook, VS art, name records) -> 68k 0x620000-0x65FFFF
 //   "gfx"    fourth 32MB   msh tiles as CPS-2X banks 12-15  -> tile codes 0xC0000-0xFFFFF
 //                  (reached by object y[15] AND x[10] both set: bits 18 and 19 together).
 //   "qsound" unchanged: msh samples ride the existing page-1 banks 0x140-0x17F.
 //
 // Both mshx regions are ERASEFF (0xFFFF is an illegal 68k instruction, so a pointer aimed
 // past a lane traps instead of executing zeros as `ori.b #0,d0`) and are filled at runtime
-// by the loader probe during the build campaign; a release build gains ROM_LOAD lines.
+// by the loader probe on this dev set; the release set mvscextrab ROM_LOADs them.
 //
 // With "Play Mode" at 1v1 and no payload loaded the set still boots and plays identically
 // to stock mvsc -- nothing in mvsc's program reaches any of the mounted address space.
@@ -2430,9 +2430,9 @@ ROM_START( mvscextra )
 	// ROM_REGION16_BE like the donor chips, so the region's byte order matches the space and
 	// the loader blits mshx.bin verbatim in the 68k view -- the A^1 pair swap stays the
 	// ':expansion' quirk (see the donor chip note below). ERASEFF: filled at runtime by the
-	// loader probe during the build campaign; a release build ROM_LOADs the files here.
+	// loader probe on this dev set; the release set mvscextrab ROM_LOADs the files.
 	ROM_REGION16_BE( 0xf0000, "mshx", ROMREGION_ERASEFF )
-	ROM_REGION16_BE( 0x40000, "mshx2", ROMREGION_ERASEFF ) // CPS-2X mshx growth chip @0x620000
+	ROM_REGION16_BE( 0x40000, "mshx2", ROMREGION_ERASEFF ) // CPS-2X mshx2 chip @0x620000: the UI lanes
 	ROM_REGION16_BE( 0x98000, "convo", ROMREGION_ERASEFF ) // CPS-2X conversation chip @0x668000: the match-start dialog lane, blitted at runtime
 	ROM_REGION16_BE( 0x3000, "status", ROMREGION_ERASEFF ) // CPS-2X status chip @0x665000: the boot screen and the changelog pages, blitted at runtime
 
@@ -2540,7 +2540,7 @@ ROM_END
 // set leaves ERASEFF for the loader (expansion, mshx, mshx2, gfx banks 12-15, the Z80's flat space above the stock
 // ROMs, QSound page-1 banks 0x140-0x17F) are real ROM_LOAD lines here.  A clone of mvsc (MAME has no clone of a clone).
 // ==== BEGIN GENERATED BY tools/excise/release.py: the baked set (do not edit by hand) ====
-// mvscextrab: mvscextra with the build IN THE ROM FILES (tools/excise/bake.py over out_v0.9.4, 2026-10-25).
+// mvscextrab: mvscextra with the build IN THE ROM FILES (tools/excise/bake.py over out_v0.9.5, 2026-11-02).
 // Same CPS-2X board as mvscextra; no Lua loader.  Regenerated by tools/excise/release.py per release.
 ROM_START( mvscextrab )
 	ROM_REGION( CODE_SIZE, "maincpu", 0 )
@@ -2560,13 +2560,13 @@ ROM_START( mvscextrab )
 	ROM_LOAD16_WORD_SWAP( "mvx_mshx.bin", 0x000000, 0xf0000, CRC(b150ca52) SHA1(b453ded108946372cfd31e1ad0b314c3bef1b265) )  // CPS-2X build chip
 
 	ROM_REGION16_BE( 0x40000, "mshx2", ROMREGION_ERASEFF )
-	ROM_LOAD16_WORD_SWAP( "mvx_mshx2.bin", 0x000000, 0x40000, CRC(5895f1fd) SHA1(ddd74395011a90b68ae982afa6ad4b9f594a711b) )  // CPS-2X build chip
+	ROM_LOAD16_WORD_SWAP( "mvx_mshx2.bin", 0x000000, 0x40000, CRC(e0457cc6) SHA1(93a8aa46d003d4301ed0c39025d6e30bbc21db40) )  // CPS-2X build chip
 
 	ROM_REGION16_BE( 0x98000, "convo", ROMREGION_ERASEFF )
 	ROM_LOAD16_WORD_SWAP( "mvx_convo.bin", 0x000000, 0x98000, CRC(2237f97b) SHA1(ab2da4ae903fc621d645b38e98f8251b38d8c187) )  // CPS-2X build chip
 
 	ROM_REGION16_BE( 0x3000, "status", ROMREGION_ERASEFF )
-	ROM_LOAD16_WORD_SWAP( "mvx_status.bin", 0x000000, 0x3000, CRC(414430c6) SHA1(1083e3ce5e4c2dfaef0084c14b7fa1b08385ef98) )  // CPS-2X build chip
+	ROM_LOAD16_WORD_SWAP( "mvx_status.bin", 0x000000, 0x3000, CRC(0b1a783e) SHA1(ec1903f0d4eebf71762af43168aa665a2a8b1ed0) )  // CPS-2X build chip
 
 	ROM_REGION16_BE( 0x400000, "donor", 0 )
 	ROM_LOAD16_WORD_SWAP( "mvx_mvse.03f", 0x000000, 0x80000, CRC(b72dc199) SHA1(61bd581ea4b969298f8a39fe03023b5456cac750) )  // stock mvse.03f
@@ -2588,10 +2588,10 @@ ROM_START( mvscextrab )
 	ROM_LOAD16_WORD_SWAP( "mvx_xvs.09", 0x300000, 0x80000, CRC(5b9b3cbc) SHA1(0ef592194330ee2b8b5f544425cafe03b5c0cbb5) )  // stock xvs.09
 
 	ROM_REGION( 0x8000000, "gfx", ROMREGION_ERASEFF )
-	ROM_LOAD64_WORD( "mvx_mvc.13m", 0x0000000, 0x400000, CRC(7669eff2) SHA1(f27097b33c3fb4fbfabffa938b9e0389ba64feb0) )  // stock mvc.13m
-	ROM_LOAD64_WORD( "mvx_mvc.15m", 0x0000002, 0x400000, CRC(06a156fc) SHA1(0374dc5654121be286b3476d1c1d5e5e4fec0e3c) )  // stock mvc.15m
-	ROM_LOAD64_WORD( "mvx_mvc.17m", 0x0000004, 0x400000, CRC(272f8719) SHA1(664ba4c6b62840f49407be37639bad84c34f8798) )  // stock mvc.17m
-	ROM_LOAD64_WORD( "mvx_mvc.19m", 0x0000006, 0x400000, CRC(8c6d3bb7) SHA1(72a726e385d3eb4fa5cbca7b39984bc71ae693f1) )  // stock mvc.19m
+	ROM_LOAD64_WORD( "mvx_mvc.13m", 0x0000000, 0x400000, CRC(322b0224) SHA1(cac44c6da6a15d6f6cd16481c72e446a469877d4) )  // stock mvc.13m
+	ROM_LOAD64_WORD( "mvx_mvc.15m", 0x0000002, 0x400000, CRC(dc320a1b) SHA1(1c8b2d9907730dd47b2ceb99383a6783f715bafe) )  // stock mvc.15m
+	ROM_LOAD64_WORD( "mvx_mvc.17m", 0x0000004, 0x400000, CRC(bf49160c) SHA1(6b631ef459ff6d634b948bef89a09e0f86cd7e44) )  // stock mvc.17m
+	ROM_LOAD64_WORD( "mvx_mvc.19m", 0x0000006, 0x400000, CRC(e82c6e7e) SHA1(6ca717dc3938efbe211bfc51ca8471e7fa62b521) )  // stock mvc.19m
 	ROM_LOAD64_WORD( "mvx_mvc.14m", 0x1000000, 0x400000, CRC(7f1df4e4) SHA1(ede92b31c1fe87f91b4fe74ac211f2fb5f863bc2) )  // stock mvc.14m
 	ROM_LOAD64_WORD( "mvx_mvc.16m", 0x1000002, 0x400000, CRC(90bd3203) SHA1(ed83208c486ea0f407b7e5d16a8cf242a6f73774) )  // stock mvc.16m
 	ROM_LOAD64_WORD( "mvx_mvc.18m", 0x1000004, 0x400000, CRC(67aaf727) SHA1(e0e69104e31d2c41e18c0d24e9ab962406a7ca9a) )  // stock mvc.18m
