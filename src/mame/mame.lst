@@ -16534,6 +16534,7 @@ mvsc2v2
 mvscduo
 mvscextra
 mvscextrab
+mvscextrademo
 xmvsf2v2
 
 @source:capcom/cps3.cpp
