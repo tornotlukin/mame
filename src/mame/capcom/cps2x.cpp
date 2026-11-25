@@ -752,6 +752,21 @@ private:
 	// object x bits 11-12 select the extended sprite palette pages 4-5. Set by init_mvscextra
 	// only; stock sets never see the extra terms.
 	bool m_cps2x_ext_obj = false;
+	// CPS-2X scroll gfx pages. The three scroll layers reach only 8MB of the 128MB ':gfx' region
+	// through the stock mapper (tile bytes 0x800000-0xFFFFFF of the host's own 32MB). On this
+	// board bits 9-11 of a tile's attribute word select a 32MB PAGE that is added to the mapped
+	// code: page 1 = the mshvsf set (0x2000000), page 2 = the xmvsf set (0x4000000), page 3 =
+	// the mshx space (0x6000000). A donor stage's tiles are therefore drawn where they already
+	// sit, from VRAM codes the donor's own map data holds. The stock renderer ignores those
+	// attribute bits, so the pages are live only while the PAGE LATCH is set: the program writes
+	// bit 0 of 0x804058 (an imported stage's setup sets it, a stock stage's setup clears it).
+	// Set up by video_start when m_cps2x_ext_obj is set; stock sets keep the stock tilemaps.
+	TILE_GET_INFO_MEMBER(cps2x_get_tile0_info);
+	TILE_GET_INFO_MEMBER(cps2x_get_tile1_info);
+	TILE_GET_INFO_MEMBER(cps2x_get_tile2_info);
+	void cps2x_scroll_page_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
+	virtual void machine_reset() override;
+	bool m_cps2x_scroll_pages = false;
 	// CPS-2X sound extension. See the block comment above cps2x_qsound_sub_map.
 	void cps2x_qsound_sub_map(address_map &map) ATTR_COLD;
 	// cps_state::qsound_sub_map with the chip handlers on qsoundx.
@@ -857,6 +872,109 @@ void cps2x_state::video_start()
 	save_pointer(NAME(m_cps2_buffered_obj), m_cps2_obj_size / 2);
 	save_item(NAME(m_pri_ctrl));
 	save_item(NAME(m_objram_bank));
+
+	// CPS-2X scroll gfx pages: the same three tilemaps with tile callbacks that honor the page
+	// bits (see the class comment). Created after the stock ones, which stay unused.
+	if (m_cps2x_ext_obj)
+	{
+		m_bg_tilemap[0] = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(cps2x_state::cps2x_get_tile0_info)), tilemap_mapper_delegate(*this, FUNC(cps2x_state::tilemap0_scan)),  8,  8, 64, 64);
+		m_bg_tilemap[1] = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(cps2x_state::cps2x_get_tile1_info)), tilemap_mapper_delegate(*this, FUNC(cps2x_state::tilemap1_scan)), 16, 16, 64, 64);
+		m_bg_tilemap[2] = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(cps2x_state::cps2x_get_tile2_info)), tilemap_mapper_delegate(*this, FUNC(cps2x_state::tilemap2_scan)), 32, 32, 64, 64);
+		cps1_update_transmasks();
+	}
+	save_item(NAME(m_cps2x_scroll_pages));
+}
+
+// The mapper's layer types, as cps1_v.cpp numbers them.
+static constexpr unsigned CPS2X_GFXTYPE_SCROLL1 = (1 << 1);
+static constexpr unsigned CPS2X_GFXTYPE_SCROLL2 = (1 << 2);
+static constexpr unsigned CPS2X_GFXTYPE_SCROLL3 = (1 << 3);
+
+// One page = one game's 32MB gfx set, in each layer's own code units (8x8 = 64 bytes,
+// 16x16 = 128 bytes, 32x32 = 512 bytes).
+TILE_GET_INFO_MEMBER(cps2x_state::cps2x_get_tile0_info)
+{
+	int code = m_scroll[0][2 * tile_index];
+	const uint16_t attr = m_scroll[0][2 * tile_index + 1];
+
+	code = gfxrom_bank_mapper(CPS2X_GFXTYPE_SCROLL1, code);
+	if (code != -1 && m_cps2x_scroll_pages)
+		code += ((attr >> 9) & 0x07) * 0x80000;
+
+	const uint8_t gfxset = BIT(tile_index, 5);
+
+	tileinfo.set(gfxset,
+			code,
+			(attr & 0x1f) + 0x20,
+			TILE_FLIPYX((attr & 0x60) >> 5));
+	tileinfo.group = (attr & 0x0180) >> 7;
+
+	if (code == -1)
+		tileinfo.pen_data = m_empty_tile;
+}
+
+TILE_GET_INFO_MEMBER(cps2x_state::cps2x_get_tile1_info)
+{
+	int code = m_scroll[1][2 * tile_index];
+	const uint16_t attr = m_scroll[1][2 * tile_index + 1];
+
+	code = gfxrom_bank_mapper(CPS2X_GFXTYPE_SCROLL2, code);
+	if (code != -1 && m_cps2x_scroll_pages)
+		code += ((attr >> 9) & 0x07) * 0x40000;
+
+	tileinfo.set(2,
+			code,
+			(attr & 0x1f) + 0x40,
+			TILE_FLIPYX((attr & 0x60) >> 5));
+	tileinfo.group = (attr & 0x0180) >> 7;
+
+	if (code == -1)
+		tileinfo.pen_data = m_empty_tile;
+}
+
+TILE_GET_INFO_MEMBER(cps2x_state::cps2x_get_tile2_info)
+{
+	int code = m_scroll[2][2 * tile_index] & 0x3fff;
+	const uint16_t attr = m_scroll[2][2 * tile_index + 1];
+
+	code = gfxrom_bank_mapper(CPS2X_GFXTYPE_SCROLL3, code);
+	if (code != -1 && m_cps2x_scroll_pages)
+		code += ((attr >> 9) & 0x07) * 0x10000;
+
+	tileinfo.set(3,
+			code,
+			(attr & 0x1f) + 0x60,
+			TILE_FLIPYX((attr & 0x60) >> 5));
+	tileinfo.group = (attr & 0x0180) >> 7;
+
+	if (code == -1)
+		tileinfo.pen_data = m_empty_tile;
+}
+
+void cps2x_state::cps2x_scroll_page_w(offs_t offset, uint16_t data, uint16_t mem_mask)
+{
+	if (ACCESSING_BITS_0_7)
+	{
+		const bool on = BIT(data, 0);
+		if (on != m_cps2x_scroll_pages)
+		{
+			m_cps2x_scroll_pages = on;
+			for (tilemap_t *tm : m_bg_tilemap)
+				tm->mark_all_dirty();
+		}
+	}
+}
+
+void cps2x_state::machine_reset()
+{
+	cps_state::machine_reset();
+	if (m_cps2x_scroll_pages)
+	{
+		m_cps2x_scroll_pages = false;
+		for (tilemap_t *tm : m_bg_tilemap)
+			if (tm)
+				tm->mark_all_dirty();
+	}
 }
 
 
@@ -1428,6 +1546,7 @@ void cps2x_state::cps2x_map(address_map &map)
 	// value. The stock 4-player sets keep cps2_4p_map as it is (their programs never read them).
 	map(0x804054, 0x804055).lr16(NAME([this]() -> uint16_t { return vs4p_effective_playmode(); }));
 	map(0x804056, 0x804057).lw16(NAME([this](offs_t offset, uint16_t data, uint16_t mem_mask) { if (ACCESSING_BITS_0_7) m_vs4p_playmode_game = data & 0x0001; }));
+	map(0x804058, 0x804059).w(FUNC(cps2x_state::cps2x_scroll_page_w));                                                                // CPS-2X scroll page latch: bit 0 = attribute bits 9-11 select a 32MB gfx page
 	map(0x410000, 0x5cffff).rom().region("donor2", 0x1c0000);                                                                         // CPS-2X donor #2 chip, segment 2: donor2 0x1C0000-0x37FFFF
 	map(0x600000, 0x603fff).ram().share("telemetry");                                                                                 // CPS-2X telemetry NVRAM: 16KB battery-backed work RAM (see the comment above)
 	map(0x620000, 0x65ffff).rom().region("mshx2", 0);                                                                                 // CPS-2X mshx2 chip: the UI lanes
