@@ -761,11 +761,15 @@ private:
 	// attribute bits, so the pages are live only while the PAGE LATCH is set: the program writes
 	// bit 0 of 0x804058 (an imported stage's setup sets it, a stock stage's setup clears it).
 	// Set up by video_start when m_cps2x_ext_obj is set; stock sets keep the stock tilemaps.
+	// The latch is NOT a save-state item (a new item would refuse every existing state file):
+	// after a state load it is taken from the game's own imported-stage byte, work RAM 0xFF416A
+	// (non-zero while an imported stage runs; the stage lane sets both together).
 	TILE_GET_INFO_MEMBER(cps2x_get_tile0_info);
 	TILE_GET_INFO_MEMBER(cps2x_get_tile1_info);
 	TILE_GET_INFO_MEMBER(cps2x_get_tile2_info);
 	void cps2x_scroll_page_w(offs_t offset, uint16_t data, uint16_t mem_mask = ~0);
 	virtual void machine_reset() override;
+	virtual void device_post_load() override ATTR_COLD;
 	bool m_cps2x_scroll_pages = false;
 	// CPS-2X sound extension. See the block comment above cps2x_qsound_sub_map.
 	void cps2x_qsound_sub_map(address_map &map) ATTR_COLD;
@@ -882,7 +886,6 @@ void cps2x_state::video_start()
 		m_bg_tilemap[2] = &machine().tilemap().create(*m_gfxdecode, tilemap_get_info_delegate(*this, FUNC(cps2x_state::cps2x_get_tile2_info)), tilemap_mapper_delegate(*this, FUNC(cps2x_state::tilemap2_scan)), 32, 32, 64, 64);
 		cps1_update_transmasks();
 	}
-	save_item(NAME(m_cps2x_scroll_pages));
 }
 
 // The mapper's layer types, as cps1_v.cpp numbers them.
@@ -962,6 +965,17 @@ void cps2x_state::cps2x_scroll_page_w(offs_t offset, uint16_t data, uint16_t mem
 			for (tilemap_t *tm : m_bg_tilemap)
 				tm->mark_all_dirty();
 		}
+	}
+}
+
+void cps2x_state::device_post_load()
+{
+	cps_state::device_post_load();
+	if (m_cps2x_ext_obj)
+	{
+		m_cps2x_scroll_pages = m_maincpu->space(AS_PROGRAM).read_byte(0xff416a) != 0;
+		for (tilemap_t *tm : m_bg_tilemap)
+			tm->mark_all_dirty();
 	}
 }
 
