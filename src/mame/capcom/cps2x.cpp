@@ -2596,6 +2596,7 @@ ROM_START( mvscextra )
 	ROM_REGION16_BE( 0x40000, "mshx2", ROMREGION_ERASEFF ) // CPS-2X mshx2 chip @0x620000: the UI lanes
 	ROM_REGION16_BE( 0x98000, "convo", ROMREGION_ERASEFF ) // CPS-2X conversation chip @0x668000: the match-start dialog lane, blitted at runtime
 	ROM_REGION16_BE( 0x3000, "status", ROMREGION_ERASEFF ) // CPS-2X status chip @0x665000: the boot screen and the changelog pages, blitted at runtime
+	ROM_REGION16_BE( 0xf0000, "stage", ROMREGION_ERASEFF ) // CPS-2X stage chip @0x810000: the imported fight stages' records, scripts and object classes, blitted at runtime
 
 	// CPS-2X DONOR CHIP @0x930000: mshvsf's WHOLE program image, byte-for-byte, normalised
 	// to the 68k's view by the same 16-bit swapping loader ':maincpu' uses. Donor address A
@@ -2728,6 +2729,8 @@ ROM_START( mvscextrab )
 
 	ROM_REGION16_BE( 0x3000, "status", ROMREGION_ERASEFF )
 	ROM_LOAD16_WORD_SWAP( "mvx_status.bin", 0x000000, 0x3000, CRC(36e55ced) SHA1(def8e502bb050b8b64357271f4fff3fd4ef1196f) )  // CPS-2X build chip
+
+	ROM_REGION16_BE( 0xf0000, "stage", ROMREGION_ERASEFF )
 
 	ROM_REGION16_BE( 0x400000, "donor", 0 )
 	ROM_LOAD16_WORD_SWAP( "mvx_mvse.03f", 0x000000, 0x80000, CRC(b72dc199) SHA1(61bd581ea4b969298f8a39fe03023b5456cac750) )  // stock mvse.03f
@@ -3165,6 +3168,17 @@ void cps2x_state::init_mvscextra()
 	init_vs4p(0xff3800, 0xff3c00);
 	save_item(NAME(m_vs4p_playmode_game));
 	m_cps2x_ext_obj = true;
+	// THE STAGE CHIP: 960KB of plaintext ROM at 0x810000-0x8FFFFF (program and opcodes space),
+	// ROM_REGION16_BE like the other built chips: the imported fight stages' hook stubs, records,
+	// lifted scripts and object classes (the stage lane). The range lies between the I/O block
+	// (0x804000-0x80417F) and video RAM (0x900000); no program of the four games names it.
+	// Mapped here, for the sets that declare the region (mvscextra, mvscextrab), so the demo
+	// machines' maps and sets are unchanged.
+	if (memory_region *const stage = memregion("stage"))
+	{
+		m_maincpu->space(AS_PROGRAM).install_rom(0x810000, 0x8fffff, stage->base());
+		m_maincpu->space(AS_OPCODES).install_rom(0x810000, 0x8fffff, stage->base());
+	}
 	// Extended sprite palette pages 4-5 (object x[11:12], see cps2_render_sprites): the 16x16
 	// element is declared with 0x80 colour codes and the renderer takes the code modulo that
 	// count, so widen it to the 0xC0 codes the 0xC00-pen palette holds. Codes below 0x80 (sprites
